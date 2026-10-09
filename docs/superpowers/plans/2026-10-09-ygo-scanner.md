@@ -271,7 +271,7 @@ npm install react react-dom tesseract.js
 npm install -D vite @vitejs/plugin-react typescript vitest @types/react @types/react-dom fake-indexeddb vite-plugin-pwa
 ```
 
-Expected: both finish without errors and create `package-lock.json`.
+Expected: both finish without errors and create `package-lock.json`. If npm reports a peer-dependency conflict between `vite-plugin-pwa` and the newest Vite, install the newest Vite major that `vite-plugin-pwa` lists as supported (`npm install -D vite@<that major>`) and rerun; do not use `--force`.
 
 - [ ] **Step 3: Write the failing tests**
 
@@ -1227,14 +1227,16 @@ describe('flatten', () => {
 
 describe('ygoprodeck source', () => {
   it('reads the version from checkDBVer', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify([{ database_version: '147.23', last_update: 'x' }])));
+    const fetchMock = vi.fn(
+      async (_url: string) => new Response(JSON.stringify([{ database_version: '147.23', last_update: 'x' }])),
+    );
     vi.stubGlobal('fetch', fetchMock);
     await expect(ygoprodeck.fetchVersion()).resolves.toBe('147.23');
     expect(String(fetchMock.mock.calls[0][0])).toBe('https://db.ygoprodeck.com/api/v7/checkDBVer.php');
   });
 
   it('fetches and flattens all cards', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify(SAMPLE)));
+    const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify(SAMPLE)));
     vi.stubGlobal('fetch', fetchMock);
     await expect(ygoprodeck.fetchPrintings()).resolves.toHaveLength(4);
     expect(String(fetchMock.mock.calls[0][0])).toBe('https://db.ygoprodeck.com/api/v7/cardinfo.php');
@@ -1374,10 +1376,13 @@ The spec's `onProgress` is a phase callback, not a percentage: the download is a
 `src/cardDatabase.test.ts`:
 
 ```ts
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory as FakeIDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 import { createCardDatabase, withinOne } from './cardDatabase';
 import type { Printing, Source } from './sources/types';
+
+// A fresh, empty in-memory IndexedDB per call, typed as the browser's factory.
+const freshIdb = (): IDBFactory => new FakeIDBFactory() as unknown as IDBFactory;
 
 const BEWD: Printing = { code: 'LOB-EN001', name: 'Blue-Eyes White Dragon', setName: 'LOB', rarity: 'Ultra Rare' };
 const DM: Printing = { code: 'LOB-EN005', name: 'Dark Magician', setName: 'LOB', rarity: 'Ultra Rare' };
@@ -1424,7 +1429,7 @@ describe('withinOne', () => {
 
 describe('card database', () => {
   it('starts empty', async () => {
-    const db = createCardDatabase([fakeSource('a', [BEWD]).source], new IDBFactory());
+    const db = createCardDatabase([fakeSource('a', [BEWD]).source], freshIdb());
     await db.load();
     expect(db.subscriptions()).toEqual([]);
     expect(db.hasData()).toBe(false);
@@ -1433,7 +1438,7 @@ describe('card database', () => {
 
   it('subscribing downloads the data and records the subscription', async () => {
     const { source } = fakeSource('a', [BEWD, DM]);
-    const db = createCardDatabase([source], new IDBFactory(), clock());
+    const db = createCardDatabase([source], freshIdb(), clock());
     await db.load();
     const phases: string[] = [];
     await db.subscribe('a', (phase) => phases.push(phase));
@@ -1454,7 +1459,7 @@ describe('card database', () => {
   });
 
   it('keeps data across app restarts', async () => {
-    const idb = new IDBFactory();
+    const idb = freshIdb();
     const { source } = fakeSource('a', [BEWD]);
     const first = createCardDatabase([source], idb);
     await first.load();
@@ -1467,7 +1472,7 @@ describe('card database', () => {
   });
 
   it('rejects subscribing to an unknown source', async () => {
-    const db = createCardDatabase([], new IDBFactory());
+    const db = createCardDatabase([], freshIdb());
     await db.load();
     await expect(db.subscribe('nope')).rejects.toThrow(/unknown/i);
   });
@@ -1475,7 +1480,7 @@ describe('card database', () => {
   it('a failed first subscribe leaves nothing behind', async () => {
     const { source, state } = fakeSource('a', [BEWD]);
     state.fail = true;
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await expect(db.subscribe('a')).rejects.toThrow('offline');
     expect(db.subscriptions()).toEqual([]);
@@ -1484,7 +1489,7 @@ describe('card database', () => {
 
   it('refuses an empty download', async () => {
     const { source } = fakeSource('a', []);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await expect(db.subscribe('a')).rejects.toThrow(/no cards/i);
     expect(db.subscriptions()).toEqual([]);
@@ -1492,7 +1497,7 @@ describe('card database', () => {
 
   it('returns every rarity of a code', async () => {
     const { source } = fakeSource('a', [ULTRA, SECRET]);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await db.subscribe('a');
     expect(db.find('RA01-EN010')).toEqual([ULTRA, SECRET]);
@@ -1501,7 +1506,7 @@ describe('card database', () => {
   it('searches all subscribed sources and returns identical printings once', async () => {
     const a = fakeSource('a', [BEWD]);
     const b = fakeSource('b', [BEWD, DM]);
-    const db = createCardDatabase([a.source, b.source], new IDBFactory());
+    const db = createCardDatabase([a.source, b.source], freshIdb());
     await db.load();
     await db.subscribe('a');
     await db.subscribe('b');
@@ -1510,7 +1515,7 @@ describe('card database', () => {
   });
 
   it('unsubscribing removes only that source', async () => {
-    const idb = new IDBFactory();
+    const idb = freshIdb();
     const a = fakeSource('a', [BEWD]);
     const b = fakeSource('b', [DM]);
     const db = createCardDatabase([a.source, b.source], idb);
@@ -1531,7 +1536,7 @@ describe('card database', () => {
 
   it('checkForUpdates does not download when the version is unchanged', async () => {
     const { source, state } = fakeSource('a', [BEWD]);
-    const db = createCardDatabase([source], new IDBFactory(), clock());
+    const db = createCardDatabase([source], freshIdb(), clock());
     await db.load();
     await db.subscribe('a');
     const downloads = state.printingsCalls;
@@ -1546,7 +1551,7 @@ describe('card database', () => {
 
   it('checkForUpdates downloads a new version and counts new printings', async () => {
     const { source, state } = fakeSource('a', [BEWD]);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await db.subscribe('a');
 
@@ -1561,7 +1566,7 @@ describe('card database', () => {
   });
 
   it('checkForUpdates with no connection keeps the data and reports the error without throwing', async () => {
-    const idb = new IDBFactory();
+    const idb = freshIdb();
     const { source, state } = fakeSource('a', [BEWD]);
     const db = createCardDatabase([source], idb);
     await db.load();
@@ -1582,7 +1587,7 @@ describe('card database', () => {
 
   it('a successful check clears a previous error', async () => {
     const { source, state } = fakeSource('a', [BEWD]);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await db.subscribe('a');
     state.fail = true;
@@ -1593,7 +1598,7 @@ describe('card database', () => {
   });
 
   it('checkForUpdates survives a subscription whose source no longer exists', async () => {
-    const idb = new IDBFactory();
+    const idb = freshIdb();
     const { source } = fakeSource('a', [BEWD]);
     const first = createCardDatabase([source], idb);
     await first.load();
@@ -1609,7 +1614,7 @@ describe('card database', () => {
 
   it('forceRefresh downloads even when the version is unchanged', async () => {
     const { source, state } = fakeSource('a', [BEWD]);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await db.subscribe('a');
 
@@ -1622,7 +1627,7 @@ describe('card database', () => {
 
   it('a failed forceRefresh keeps the old data and records the error', async () => {
     const { source, state } = fakeSource('a', [BEWD]);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await db.subscribe('a');
 
@@ -1636,7 +1641,7 @@ describe('card database', () => {
 
   it('forceRefresh requires a subscription', async () => {
     const { source } = fakeSource('a', [BEWD]);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await expect(db.forceRefresh('a')).rejects.toThrow(/not subscribed/i);
   });
@@ -1645,7 +1650,7 @@ describe('card database', () => {
     const codes = ['LOB-EN001', 'LOB-EN002', 'LOB-EN003', 'LOB-EN004', 'LOB-EN005', 'LOB-EN006', 'SDK-001'];
     const printings = codes.map((code) => ({ code, name: code, setName: 'S', rarity: 'Common' }));
     const { source } = fakeSource('a', printings);
-    const db = createCardDatabase([source], new IDBFactory());
+    const db = createCardDatabase([source], freshIdb());
     await db.load();
     await db.subscribe('a');
 
@@ -1828,15 +1833,19 @@ export function createCardDatabase(
       const db = await openDatabase(idb);
       try {
         const transaction = db.transaction([SUBSCRIPTIONS, PRINTINGS], 'readonly');
-        const stored = await result<Subscription[]>(transaction.objectStore(SUBSCRIPTIONS).getAll());
+        // All requests are issued before the first await: an IndexedDB transaction
+        // closes itself once control returns to the event loop with nothing pending.
+        const [stored, keys, values] = await Promise.all([
+          result<Subscription[]>(transaction.objectStore(SUBSCRIPTIONS).getAll()),
+          result<IDBValidKey[]>(transaction.objectStore(PRINTINGS).getAllKeys()),
+          result<Printing[][]>(transaction.objectStore(PRINTINGS).getAll()),
+        ]);
+        const savedPrintings = new Map(keys.map((key, i) => [String(key), values[i]]));
         subscriptionsById.clear();
         printingsBySource.clear();
         for (const subscription of stored) {
-          const printings = await result<Printing[] | undefined>(
-            transaction.objectStore(PRINTINGS).get(subscription.sourceId),
-          );
           subscriptionsById.set(subscription.sourceId, subscription);
-          printingsBySource.set(subscription.sourceId, printings ?? []);
+          printingsBySource.set(subscription.sourceId, savedPrintings.get(subscription.sourceId) ?? []);
         }
       } finally {
         db.close();
@@ -2900,13 +2909,11 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
 
 - [ ] **Step 3: Edit `src/App.tsx`**
 
-Edit 1 — add two imports below the `cardDatabase` import:
+Edit 1 — add one import below the `cardDatabase` import:
 
 ```tsx
 import { createCollection, type Entry, type NewEntry } from './collection';
 ```
-
-(Only this one line is added; `Entry` and `NewEntry` are both used below.)
 
 Edit 2 — below `const db = createCardDatabase(SOURCES, indexedDB);` add:
 
