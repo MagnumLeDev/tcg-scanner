@@ -13,23 +13,44 @@ export function CameraView({ busy, onCapture, onError }: Props) {
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let generation = 0; // bumped on every halt, so a late start knows it is stale
     let stop: (() => void) | null = null;
-    startCamera(videoRef.current!)
-      .then((stopCamera) => {
-        if (cancelled) {
-          stopCamera();
-          return;
-        }
-        stop = stopCamera;
-        setRunning(true);
-      })
-      .catch((error) => {
-        if (!cancelled) onError(cameraErrorMessage(error));
-      });
-    return () => {
-      cancelled = true;
+
+    function halt() {
+      generation++;
       stop?.();
+      stop = null;
+      setRunning(false);
+    }
+
+    function begin() {
+      const mine = ++generation;
+      startCamera(videoRef.current!)
+        .then((stopCamera) => {
+          if (mine !== generation) {
+            stopCamera();
+            return;
+          }
+          stop = stopCamera;
+          setRunning(true);
+        })
+        .catch((error) => {
+          if (mine === generation) onError(cameraErrorMessage(error));
+        });
+    }
+
+    // Phones often hand back a frozen or black picture after the app was in the
+    // background, so the camera is released when hidden and restarted when shown.
+    function onVisibility() {
+      halt();
+      if (document.visibilityState === 'visible') begin();
+    }
+
+    begin();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      halt();
     };
     // The camera is started once per mount; onError is not a dependency on purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps

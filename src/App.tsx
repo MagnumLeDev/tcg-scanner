@@ -51,6 +51,14 @@ export default function App() {
     if (!saved) setNotice('Changed, but the list could not be saved on this phone. Export it to keep a copy.');
   }
 
+  // Re-render when a database download starts, changes phase, or ends.
+  useEffect(() => db.onChange(refresh), []);
+
+  // Ask the browser not to evict the card list and database under storage pressure.
+  useEffect(() => {
+    void navigator.storage?.persist?.().catch(() => false);
+  }, []);
+
   useEffect(() => {
     let active = true;
     loadOnce()

@@ -24,9 +24,15 @@ export async function startCamera(video: HTMLVideoElement): Promise<() => void> 
     audio: false,
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
   });
+  const stop = () => stream.getTracks().forEach((track) => track.stop());
   video.srcObject = stream;
-  await video.play();
-  return () => stream.getTracks().forEach((track) => track.stop());
+  try {
+    await video.play();
+  } catch (error) {
+    stop(); // otherwise the camera stays on with nothing showing it
+    throw error;
+  }
+  return stop;
 }
 
 export function captureFrame(video: HTMLVideoElement, frameElement: HTMLElement): HTMLCanvasElement {

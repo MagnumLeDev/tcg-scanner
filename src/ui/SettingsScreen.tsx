@@ -1,40 +1,29 @@
-import { useState } from 'react';
 import type { CardDatabase, Phase } from '../cardDatabase';
+import { isInstalled } from '../installed';
 import type { Source } from '../sources/types';
 
 type Props = { db: CardDatabase; sources: Source[]; onChange: () => void };
+
+const PHASE_LABEL: Record<Phase | 'idle', string | null> = {
+  idle: null,
+  downloading: 'Downloading…',
+  saving: 'Saving…',
+};
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
 export function SettingsScreen({ db, sources, onChange }: Props) {
-  const [busy, setBusy] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  async function run(sourceId: string, action: (onProgress: (phase: Phase) => void) => Promise<void>) {
-    setErrors((current) => ({ ...current, [sourceId]: '' }));
-    setBusy((current) => ({ ...current, [sourceId]: 'Starting…' }));
-    try {
-      await action((phase) =>
-        setBusy((current) => ({ ...current, [sourceId]: phase === 'downloading' ? 'Downloading…' : 'Saving…' })),
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setErrors((current) => ({ ...current, [sourceId]: message }));
-    } finally {
-      setBusy((current) => {
-        const next = { ...current };
-        delete next[sourceId];
-        return next;
-      });
-      onChange();
-    }
+  // Progress and errors are read from the database itself, so they are still
+  // correct after leaving this screen and coming back during a download.
+  function run(action: Promise<void>) {
+    action.catch(() => {}).finally(onChange);
   }
 
   function unsubscribe(source: Source) {
     const question = `Unsubscribe from “${source.name}”? Its data is deleted from this phone. Your card list is kept.`;
-    if (window.confirm(question)) void run(source.id, () => db.unsubscribe(source.id));
+    if (window.confirm(question)) run(db.unsubscribe(source.id));
   }
 
   return (
@@ -42,8 +31,8 @@ export function SettingsScreen({ db, sources, onChange }: Props) {
       <h2>Card databases</h2>
       {sources.map((source) => {
         const subscription = db.subscriptions().find((s) => s.sourceId === source.id);
-        const working = busy[source.id];
-        const error = errors[source.id] || subscription?.lastError;
+        const working = PHASE_LABEL[db.activity(source.id) ?? 'idle'];
+        const error = db.failure(source.id) ?? subscription?.lastError;
         return (
           <section className="card stack" key={source.id}>
             <div className="row">
@@ -56,7 +45,7 @@ export function SettingsScreen({ db, sources, onChange }: Props) {
                 <button
                   className="primary"
                   disabled={!!working}
-                  onClick={() => void run(source.id, (onProgress) => db.subscribe(source.id, onProgress))}
+                  onClick={() => run(db.subscribe(source.id))}
                 >
                   Subscribe
                 </button>
@@ -74,7 +63,7 @@ export function SettingsScreen({ db, sources, onChange }: Props) {
                 </div>
                 <button
                   disabled={!!working}
-                  onClick={() => void run(source.id, (onProgress) => db.forceRefresh(source.id, onProgress))}
+                  onClick={() => run(db.forceRefresh(source.id))}
                 >
                   Force refresh
                 </button>
@@ -86,6 +75,12 @@ export function SettingsScreen({ db, sources, onChange }: Props) {
           </section>
         );
       })}
+      {!isInstalled() && (
+        <p className="card">
+          Add this app to your Home Screen before building your list. A browser tab can lose its saved data after a few
+          days without use, and on iPhone the installed app does not share data with the Safari tab.
+        </p>
+      )}
       <p className="muted">
         Subscribed databases are checked for new cards each time the app opens. Scanning works offline once a database
         is downloaded.

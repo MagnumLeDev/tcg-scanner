@@ -10,7 +10,8 @@ function percentile(histogram: Uint32Array, total: number, fraction: number): nu
 
 // Rewrites RGBA data in place: greyscale, contrast stretched between the 2nd and
 // 98th percentile, and inverted when the image is mostly dark so text is dark on light.
-export function toHighContrastGrey(data: Uint8ClampedArray): void {
+// `flip` reverses that choice, for crops where "mostly dark" guesses wrong.
+export function toHighContrastGrey(data: Uint8ClampedArray, flip = false): void {
   const count = data.length / 4;
   if (count === 0) return;
 
@@ -35,9 +36,9 @@ export function toHighContrastGrey(data: Uint8ClampedArray): void {
     sum += stretched;
   }
 
-  const mostlyDark = sum / count < 128;
+  const invert = sum / count < 128 !== flip;
   for (let i = 0; i < count; i++) {
-    const value = mostlyDark ? 255 - grey[i] : grey[i];
+    const value = invert ? 255 - grey[i] : grey[i];
     const o = i * 4;
     data[o] = value;
     data[o + 1] = value;

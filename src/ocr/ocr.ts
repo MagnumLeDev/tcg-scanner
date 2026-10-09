@@ -1,4 +1,5 @@
 import { createWorker, PSM, type Worker } from 'tesseract.js';
+import { extract } from '../setCode';
 import { toHighContrastGrey } from './preprocess';
 
 const SCALE = 3;
@@ -24,7 +25,22 @@ function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
+// Downloads and starts the text reader ahead of the first scan, so that the
+// first scan is quick and scanning works offline afterwards.
+export async function prepare(): Promise<void> {
+  await getWorker();
+}
+
+// Reads the crop; if no set code comes out, reads it again with the opposite
+// polarity, because the automatic dark/light choice can be wrong on some frames.
 export async function recognise(source: HTMLCanvasElement): Promise<string> {
+  const first = await read(source, false);
+  if (extract(first) !== null) return first;
+  const second = await read(source, true);
+  return extract(second) !== null ? second : first;
+}
+
+async function read(source: HTMLCanvasElement, flip: boolean): Promise<string> {
   const canvas = document.createElement('canvas');
   canvas.width = source.width * SCALE;
   canvas.height = source.height * SCALE;
@@ -33,7 +49,7 @@ export async function recognise(source: HTMLCanvasElement): Promise<string> {
   context.drawImage(source, 0, 0, canvas.width, canvas.height);
 
   const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  toHighContrastGrey(image.data);
+  toHighContrastGrey(image.data, flip);
   context.putImageData(image, 0, 0);
 
   const worker = await getWorker();

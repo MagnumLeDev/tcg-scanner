@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { cameraErrorMessage, sourceRect } from './camera';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cameraErrorMessage, sourceRect, startCamera } from './camera';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('sourceRect', () => {
   it('accounts for horizontal cropping when the video is wider than the element', () => {
@@ -27,6 +29,36 @@ describe('sourceRect', () => {
       { x: 10, y: 20, width: 30, height: 40 },
     );
     expect(rect).toEqual({ x: 10, y: 20, width: 30, height: 40 });
+  });
+});
+
+describe('startCamera', () => {
+  function fakeCamera() {
+    const track = { stop: vi.fn() };
+    const stream = { getTracks: () => [track] };
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: async () => stream } });
+    return track;
+  }
+
+  it('returns a function that turns the camera off', async () => {
+    const track = fakeCamera();
+    const video = { srcObject: null, play: async () => {} } as unknown as HTMLVideoElement;
+    const stop = await startCamera(video);
+    expect(track.stop).not.toHaveBeenCalled();
+    stop();
+    expect(track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('turns the camera off again when the preview cannot start', async () => {
+    const track = fakeCamera();
+    const video = {
+      srcObject: null,
+      play: async () => {
+        throw new Error('play interrupted');
+      },
+    } as unknown as HTMLVideoElement;
+    await expect(startCamera(video)).rejects.toThrow('play interrupted');
+    expect(track.stop).toHaveBeenCalledTimes(1);
   });
 });
 

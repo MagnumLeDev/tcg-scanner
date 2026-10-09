@@ -12,12 +12,20 @@ const ULTRA: Printing = { code: 'RA01-EN010', name: 'Two Rarities', setName: 'RA
 const SECRET: Printing = { code: 'RA01-EN010', name: 'Two Rarities', setName: 'RA01', rarity: 'Secret Rare' };
 
 function fakeSource(id: string, printings: Printing[]) {
-  const state = { version: '1', printings, fail: false, versionCalls: 0, printingsCalls: 0 };
+  const state = {
+    version: '1',
+    printings,
+    fail: false,
+    versionCalls: 0,
+    printingsCalls: 0,
+    hold: null as Promise<void> | null,
+  };
   const source: Source = {
     id,
     name: `Fake ${id}`,
     async fetchVersion() {
       state.versionCalls++;
+      if (state.hold) await state.hold;
       if (state.fail) throw new Error('offline');
       return state.version;
     },
@@ -28,6 +36,12 @@ function fakeSource(id: string, printings: Printing[]) {
     },
   };
   return { source, state };
+}
+
+function gate() {
+  let open!: () => void;
+  const wait = new Promise<void>((resolve) => (open = resolve));
+  return { wait, open };
 }
 
 function clock() {
@@ -266,6 +280,93 @@ describe('card database', () => {
     const db = createCardDatabase([source], freshIdb());
     await db.load();
     await expect(db.forceRefresh('a')).rejects.toThrow(/not subscribed/i);
+  });
+
+  it('an update check that finishes after an unsubscribe does not bring the subscription back', async () => {
+    const idb = freshIdb();
+    const { source, state } = fakeSource('a', [BEWD]);
+    const db = createCardDatabase([source], idb);
+    await db.load();
+    await db.subscribe('a');
+
+    const slow = gate();
+    state.hold = slow.wait;
+    const check = db.checkForUpdates();
+    const unsubscribe = db.unsubscribe('a');
+    slow.open();
+    await Promise.all([check, unsubscribe]);
+
+    expect(db.subscriptions()).toEqual([]);
+    expect(db.hasData()).toBe(false);
+    const reopened = createCardDatabase([source], idb);
+    await reopened.load();
+    expect(reopened.subscriptions()).toEqual([]);
+  });
+
+  it('a force refresh that overlaps an update check is not overwritten by it', async () => {
+    const { source, state } = fakeSource('a', [BEWD]);
+    const db = createCardDatabase([source], freshIdb());
+    await db.load();
+    await db.subscribe('a');
+
+    const slow = gate();
+    state.hold = slow.wait;
+    const check = db.checkForUpdates();
+    state.version = '2';
+    state.printings = [BEWD, DM];
+    const refresh = db.forceRefresh('a');
+    slow.open();
+    await Promise.all([check, refresh]);
+
+    expect(db.subscriptions()[0].version).toBe('2');
+    expect(db.subscriptions()[0].count).toBe(2);
+  });
+
+  it('two subscribes to the same source at once download once', async () => {
+    const { source, state } = fakeSource('a', [BEWD]);
+    const db = createCardDatabase([source], freshIdb());
+    await db.load();
+    await Promise.all([db.subscribe('a'), db.subscribe('a')]);
+    expect(state.printingsCalls).toBe(1);
+    expect(db.subscriptions()).toHaveLength(1);
+  });
+
+  it('reports the running activity of a source and notifies listeners', async () => {
+    const { source, state } = fakeSource('a', [BEWD]);
+    const db = createCardDatabase([source], freshIdb());
+    await db.load();
+    let notified = 0;
+    const stopListening = db.onChange(() => notified++);
+
+    const slow = gate();
+    state.hold = slow.wait;
+    expect(db.activity('a')).toBeNull();
+    const subscribing = db.subscribe('a');
+    expect(db.activity('a')).toBe('downloading');
+    slow.open();
+    await subscribing;
+
+    expect(db.activity('a')).toBeNull();
+    expect(notified).toBeGreaterThan(0);
+    stopListening();
+    const before = notified;
+    await db.forceRefresh('a');
+    expect(notified).toBe(before);
+  });
+
+  it('remembers why a first subscribe failed until the next attempt succeeds', async () => {
+    const { source, state } = fakeSource('a', [BEWD]);
+    state.fail = true;
+    const db = createCardDatabase([source], freshIdb());
+    await db.load();
+    expect(db.failure('a')).toBeNull();
+    await expect(db.subscribe('a')).rejects.toThrow('offline');
+    expect(db.failure('a')).toBe('offline');
+    expect(db.activity('a')).toBeNull();
+
+    state.fail = false;
+    await db.subscribe('a');
+    expect(db.failure('a')).toBeNull();
   });
 
   it('suggests up to five known codes one edit away, sorted', async () => {

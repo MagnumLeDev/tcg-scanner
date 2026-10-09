@@ -67,6 +67,25 @@ describe('ygoprodeck source', () => {
     await expect(ygoprodeck.fetchPrintings()).rejects.toThrow(/503/);
   });
 
+  it('gives up on a request that never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      const hanging = (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        });
+      vi.stubGlobal('fetch', vi.fn(hanging));
+      const outcome = ygoprodeck.fetchVersion().then(
+        () => 'answered',
+        (error: Error) => error.message,
+      );
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await expect(outcome).resolves.toMatch(/timed out/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fails clearly on an unexpected version payload', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({}))));
     await expect(ygoprodeck.fetchVersion()).rejects.toThrow(/format/i);

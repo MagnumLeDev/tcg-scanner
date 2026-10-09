@@ -73,6 +73,31 @@ export function createCardDatabase(
   const printingsBySource = new Map<string, Printing[]>();
   let byCode = new Map<string, Printing[]>();
 
+  const activities = new Map<string, Phase>(); // what is running now, per source
+  const failures = new Map<string, string>(); // why the last attempt failed, for sources with no subscription
+  const downloads = new Map<string, Promise<void>>(); // user-requested download in flight, per source
+  const queues = new Map<string, Promise<unknown>>();
+  const listeners = new Set<() => void>();
+
+  function notify(): void {
+    for (const listener of listeners) listener();
+  }
+
+  // Operations on one source run one after another, so a slow update check can
+  // never write over an unsubscribe or a refresh that happened in the meantime.
+  function enqueue<T>(sourceId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = queues.get(sourceId) ?? Promise.resolve();
+    const next = previous.then(operation, operation);
+    queues.set(sourceId, next.catch(() => {}));
+    return next;
+  }
+
+  function setActivity(sourceId: string, phase: Phase | null): void {
+    if (phase) activities.set(sourceId, phase);
+    else activities.delete(sourceId);
+    notify();
+  }
+
   function rebuildIndex(): void {
     byCode = new Map();
     const seen = new Set<string>();
@@ -110,10 +135,12 @@ export function createCardDatabase(
 
   async function download(sourceId: string, onProgress?: (phase: Phase) => void): Promise<number> {
     const source = sourceById(sourceId);
+    setActivity(sourceId, 'downloading');
     onProgress?.('downloading');
     const [version, printings] = await Promise.all([source.fetchVersion(), source.fetchPrintings()]);
     if (printings.length === 0) throw new Error('The database returned no cards');
 
+    setActivity(sourceId, 'saving');
     onProgress?.('saving');
     const previous = new Set((printingsBySource.get(sourceId) ?? []).map(printingKey));
     const added = printings.filter((p) => !previous.has(printingKey(p))).length;
@@ -146,13 +173,28 @@ export function createCardDatabase(
     }
   }
 
-  async function downloadOrRecord(sourceId: string, onProgress?: (phase: Phase) => void): Promise<void> {
-    try {
-      await download(sourceId, onProgress);
-    } catch (error) {
-      await recordError(sourceId, messageOf(error));
-      throw error;
-    }
+  // A second request for a source that is already downloading joins the first.
+  function requestDownload(sourceId: string, onProgress?: (phase: Phase) => void): Promise<void> {
+    const running = downloads.get(sourceId);
+    if (running) return running;
+
+    setActivity(sourceId, 'downloading');
+    const promise = enqueue(sourceId, async () => {
+      failures.delete(sourceId);
+      try {
+        await download(sourceId, onProgress);
+      } catch (error) {
+        const message = messageOf(error);
+        if (subscriptionsById.has(sourceId)) await recordError(sourceId, message);
+        else failures.set(sourceId, message);
+        throw error;
+      } finally {
+        downloads.delete(sourceId);
+        setActivity(sourceId, null);
+      }
+    });
+    downloads.set(sourceId, promise);
+    return promise;
   }
 
   return {
@@ -184,52 +226,79 @@ export function createCardDatabase(
       return [...subscriptionsById.values()];
     },
 
-    subscribe(sourceId: string, onProgress?: (phase: Phase) => void): Promise<void> {
-      return downloadOrRecord(sourceId, onProgress);
+    // What is running for a source right now, or null.
+    activity(sourceId: string): Phase | null {
+      return activities.get(sourceId) ?? null;
     },
 
-    async unsubscribe(sourceId: string): Promise<void> {
-      const db = await openDatabase(idb);
-      try {
-        const transaction = db.transaction([SUBSCRIPTIONS, PRINTINGS], 'readwrite');
-        transaction.objectStore(SUBSCRIPTIONS).delete(sourceId);
-        transaction.objectStore(PRINTINGS).delete(sourceId);
-        await finished(transaction);
-      } finally {
-        db.close();
-      }
-      subscriptionsById.delete(sourceId);
-      printingsBySource.delete(sourceId);
-      rebuildIndex();
+    // Why the last subscribe attempt failed, for a source that is not subscribed.
+    failure(sourceId: string): string | null {
+      return failures.get(sourceId) ?? null;
+    },
+
+    // Calls the listener whenever an activity starts, changes phase, or ends.
+    onChange(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+
+    subscribe(sourceId: string, onProgress?: (phase: Phase) => void): Promise<void> {
+      return requestDownload(sourceId, onProgress);
+    },
+
+    unsubscribe(sourceId: string): Promise<void> {
+      return enqueue(sourceId, async () => {
+        const db = await openDatabase(idb);
+        try {
+          const transaction = db.transaction([SUBSCRIPTIONS, PRINTINGS], 'readwrite');
+          transaction.objectStore(SUBSCRIPTIONS).delete(sourceId);
+          transaction.objectStore(PRINTINGS).delete(sourceId);
+          await finished(transaction);
+        } finally {
+          db.close();
+        }
+        subscriptionsById.delete(sourceId);
+        printingsBySource.delete(sourceId);
+        failures.delete(sourceId);
+        rebuildIndex();
+        notify();
+      });
     },
 
     async checkForUpdates(): Promise<UpdateResult[]> {
       const results: UpdateResult[] = [];
-      for (const subscription of [...subscriptionsById.values()]) {
-        const { sourceId } = subscription;
-        try {
-          const version = await sourceById(sourceId).fetchVersion();
-          if (version === subscription.version) {
-            const next = { ...subscription, checkedAt: now(), lastError: null };
-            await store(next, null);
-            subscriptionsById.set(sourceId, next);
-            results.push({ sourceId, updated: false, added: 0, error: null });
-          } else {
-            const added = await download(sourceId);
-            results.push({ sourceId, updated: true, added, error: null });
+      for (const { sourceId } of [...subscriptionsById.values()]) {
+        await enqueue(sourceId, async () => {
+          const subscription = subscriptionsById.get(sourceId);
+          if (!subscription) return; // unsubscribed while this check was waiting its turn
+          try {
+            const version = await sourceById(sourceId).fetchVersion();
+            if (version === subscription.version) {
+              const next = { ...subscription, checkedAt: now(), lastError: null };
+              await store(next, null);
+              subscriptionsById.set(sourceId, next);
+              results.push({ sourceId, updated: false, added: 0, error: null });
+            } else {
+              const added = await download(sourceId);
+              results.push({ sourceId, updated: true, added, error: null });
+            }
+          } catch (error) {
+            const message = messageOf(error);
+            await recordError(sourceId, message);
+            results.push({ sourceId, updated: false, added: 0, error: message });
+          } finally {
+            setActivity(sourceId, null);
           }
-        } catch (error) {
-          const message = messageOf(error);
-          await recordError(sourceId, message);
-          results.push({ sourceId, updated: false, added: 0, error: message });
-        }
+        });
       }
       return results;
     },
 
     async forceRefresh(sourceId: string, onProgress?: (phase: Phase) => void): Promise<void> {
       if (!subscriptionsById.has(sourceId)) throw new Error(`Not subscribed to ${sourceId}`);
-      await downloadOrRecord(sourceId, onProgress);
+      await requestDownload(sourceId, onProgress);
     },
 
     hasData(): boolean {
