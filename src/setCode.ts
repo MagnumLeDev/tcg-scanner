@@ -88,12 +88,32 @@ export function lookupCandidates(code: string): string[] {
   return [...new Set(candidates)];
 }
 
-const LOOK_ALIKE_DIGIT: Record<string, string> = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' };
+const LOOK_ALIKE_DIGIT: Record<string, string> = {
+  O: '0', Q: '0', D: '0', C: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8',
+};
 
-// The ways a code read by the camera may have been meant: first with letters in
-// the number turned into the digits they look like, then exactly as read.
+// In the set prefix both letters and digits are possible, so each of these may stand for the other.
+const LOOK_ALIKE_PAIR: Record<string, string> = {
+  O: '0', '0': 'O', I: '1', '1': 'I', S: '5', '5': 'S', B: '8', '8': 'B', Z: '2', '2': 'Z',
+};
+
+// Every spelling of the prefix with look-alike characters swapped, as read first.
+function prefixVariants(prefix: string): string[] {
+  let variants = [''];
+  for (const character of prefix) {
+    const other = LOOK_ALIKE_PAIR[character];
+    variants = variants.flatMap((start) => (other ? [start + character, start + other] : [start + character]));
+  }
+  return variants;
+}
+
+// The ways a code read by the camera may have been meant, most likely first:
+// letters in the number turned into the digits they look like, then exactly as
+// read, then the same with look-alike characters swapped in the set prefix.
 export function readingVariants(code: string): string[] {
   const { prefix, region, number } = parse(code);
   const digits = number.replace(/[A-Z]/g, (letter) => LOOK_ALIKE_DIGIT[letter] ?? letter);
-  return [...new Set([`${prefix}-${region}${digits}`, code])];
+  const variants = [`${prefix}-${region}${digits}`, code];
+  for (const other of prefixVariants(prefix)) variants.push(`${other}-${region}${digits}`);
+  return [...new Set(variants)];
 }

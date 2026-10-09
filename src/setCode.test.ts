@@ -120,17 +120,24 @@ describe('extractAll', () => {
 });
 
 describe('readingVariants', () => {
-  it('puts the code with look-alike letters turned into digits first', () => {
-    expect(readingVariants('LOB-ENOOS')).toEqual(['LOB-EN005', 'LOB-ENOOS']);
-    expect(readingVariants('SDK-OI8')).toEqual(['SDK-018', 'SDK-OI8']);
-    expect(readingVariants('LOB-FRZBG')).toEqual(['LOB-FR286', 'LOB-FRZBG']);
+  it('puts the code with look-alike letters in the number turned into digits first, then the code as read', () => {
+    expect(readingVariants('SDK-OI8').slice(0, 2)).toEqual(['SDK-018', 'SDK-OI8']);
+    expect(readingVariants('MRD-FRZCG').slice(0, 2)).toEqual(['MRD-FR206', 'MRD-FRZCG']);
+    expect(readingVariants('DUEA-ENSE1').slice(0, 2)).toEqual(['DUEA-EN5E1', 'DUEA-ENSE1']);
   });
 
-  it('gives a clean code once', () => {
-    expect(readingVariants('LOB-EN001')).toEqual(['LOB-EN001']);
+  it('gives a code with nothing ambiguous once', () => {
+    expect(readingVariants('MRD-EN234')).toEqual(['MRD-EN234']);
   });
 
-  it('keeps special-edition numbers as the fallback', () => {
-    expect(readingVariants('DUEA-ENSE1')).toEqual(['DUEA-EN5E1', 'DUEA-ENSE1']);
+  it('also swaps look-alike characters in the set prefix', () => {
+    expect(readingVariants('CTI3-ENCO3')).toContain('CT13-EN003');
+    expect(readingVariants('L0B-EN001')).toContain('LOB-EN001');
+    expect(readingVariants('5DK-001')).toContain('SDK-001');
+  });
+
+  it('never returns the same code twice', () => {
+    const variants = readingVariants('LOB-ENOOS');
+    expect(new Set(variants).size).toBe(variants.length);
   });
 });

@@ -1,5 +1,5 @@
-const RELATIVE_MARGIN = 0.15; // how much darker (or lighter) than its surroundings ink must be
-const ABSOLUTE_MARGIN = 6; // keeps camera noise in flat areas from counting as ink
+const RELATIVE_MARGIN = 0.06; // how much darker (or lighter) than its surroundings ink must be
+const ABSOLUTE_MARGIN = 3; // keeps camera noise in flat areas from counting as ink
 
 // Rewrites RGBA data in place as black ink on white. Each pixel is compared with
 // the average of its neighbourhood rather than with the whole picture, so text
