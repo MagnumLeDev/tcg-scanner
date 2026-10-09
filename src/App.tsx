@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { createCardDatabase, type UpdateResult } from './cardDatabase';
 import { createCollection, type Entry, type NewEntry } from './collection';
 import { SOURCES } from './sources';
+import { CardsScreen } from './ui/CardsScreen';
 import { ScanScreen } from './ui/ScanScreen';
 import { SettingsScreen } from './ui/SettingsScreen';
 
-type Tab = 'scan' | 'settings';
+type Tab = 'scan' | 'cards' | 'settings';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'scan', label: 'Scan' },
+  { id: 'cards', label: 'My cards' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -37,6 +39,16 @@ export default function App() {
 
   function handleAdd(entry: NewEntry) {
     showSaved(collection.add(entry), `Added ${entry.name}`);
+  }
+
+  function handleImport(imported: Entry[], mode: 'merge' | 'replace') {
+    const saved = mode === 'merge' ? collection.merge(imported) : collection.replaceAll(imported);
+    showSaved(saved, `Imported ${imported.length} card${imported.length === 1 ? '' : 's'}`);
+  }
+
+  function handleChange(saved: boolean) {
+    setEntries(collection.all());
+    if (!saved) setNotice('Changed, but the list could not be saved on this phone. Export it to keep a copy.');
   }
 
   useEffect(() => {
@@ -73,11 +85,20 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">YGO Scanner · {entries.reduce((sum, entry) => sum + entry.quantity, 0)} cards</header>
+      <header className="topbar">YGO Scanner</header>
       <main className="screen">
         {!ready && <p className="pad muted">Loading…</p>}
         {ready && tab === 'scan' && (
           <ScanScreen db={db} onAdd={handleAdd} onOpenSettings={() => setTab('settings')} />
+        )}
+        {ready && tab === 'cards' && (
+          <CardsScreen
+            entries={entries}
+            onSetQuantity={(key, quantity) => handleChange(collection.setQuantity(key, quantity))}
+            onRemove={(key) => handleChange(collection.remove(key))}
+            onImport={handleImport}
+            onGoScan={() => setTab('scan')}
+          />
         )}
         {ready && tab === 'settings' && <SettingsScreen db={db} sources={SOURCES} onChange={refresh} />}
         {notice && (

@@ -116,3 +116,7 @@ h2 { margin: 0; font-size: 1.1rem; }
 .result { border-top: 1px solid var(--line); background: var(--panel); max-height: 60%; overflow-y: auto; }
 .row.wrap { flex-wrap: wrap; }
 label.stack { gap: 4px; }
+
+.quantity { display: flex; align-items: center; gap: 6px; }
+.quantity button { padding: 6px 12px; }
+.quantity span { min-width: 1.5em; text-align: center; }
