@@ -112,3 +112,7 @@ h2 { margin: 0; font-size: 1.1rem; }
   font-weight: 600;
   z-index: 10;
 }
+
+.result { border-top: 1px solid var(--line); background: var(--panel); max-height: 60%; overflow-y: auto; }
+.row.wrap { flex-wrap: wrap; }
+label.stack { gap: 4px; }
