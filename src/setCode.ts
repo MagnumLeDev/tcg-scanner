@@ -46,13 +46,24 @@ export const CODE_PATTERN = /^[A-Z0-9]{2,5}-[A-Z]{0,2}[A-Z0-9]{3}$/;
 // A code that is not glued to other letters or digits. No lookbehind: it breaks on older iOS.
 const CODE_IN_TEXT = /(?:^|[^A-Z0-9])([A-Z0-9]{2,5}-[A-Z]{0,2}[A-Z0-9]{3})(?![A-Z0-9])/;
 
-export function extract(text: string): string | null {
-  const cleaned = text
+function clean(text: string): string {
+  return text
     .toUpperCase()
     .replace(/[‐-―−]/g, '-')
     .replace(/\s*-\s*/g, '-');
-  const found = CODE_IN_TEXT.exec(cleaned);
+}
+
+export function extract(text: string): string | null {
+  const found = CODE_IN_TEXT.exec(clean(text));
   return found ? found[1] : null;
+}
+
+// Every code in the text, in reading order, each listed once.
+export function extractAll(text: string): string[] {
+  const pattern = new RegExp(CODE_IN_TEXT.source, 'g');
+  const codes = new Set<string>();
+  for (const found of clean(text).matchAll(pattern)) codes.add(found[1]);
+  return [...codes];
 }
 
 export function parse(code: string): { prefix: string; region: string; number: string } {
@@ -75,4 +86,14 @@ export function lookupCandidates(code: string): string[] {
     for (const n of numbers) candidates.push(`${prefix}-${r}${n}`);
   }
   return [...new Set(candidates)];
+}
+
+const LOOK_ALIKE_DIGIT: Record<string, string> = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8' };
+
+// The ways a code read by the camera may have been meant: first with letters in
+// the number turned into the digits they look like, then exactly as read.
+export function readingVariants(code: string): string[] {
+  const { prefix, region, number } = parse(code);
+  const digits = number.replace(/[A-Z]/g, (letter) => LOOK_ALIKE_DIGIT[letter] ?? letter);
+  return [...new Set([`${prefix}-${region}${digits}`, code])];
 }

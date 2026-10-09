@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CODE_PATTERN, extract, languageOf, lookupCandidates, parse } from './setCode';
+import { CODE_PATTERN, extract, extractAll, languageOf, lookupCandidates, parse, readingVariants } from './setCode';
 
 describe('extract', () => {
   it('returns a clean code unchanged', () => {
@@ -98,5 +98,39 @@ describe('lookupCandidates', () => {
 
   it('leaves special-edition numbers alone', () => {
     expect(lookupCandidates('DUEA-ENSE1')).toEqual(['DUEA-ENSE1', 'DUEA-ESE1', 'DUEA-SE1']);
+  });
+});
+
+describe('extractAll', () => {
+  it('returns every code in the text, in reading order', () => {
+    expect(extractAll('ED-ITION 7 LOB-EN001\nxx SDK-001')).toEqual(['ED-ITION', 'LOB-EN001', 'SDK-001']);
+  });
+
+  it('finds codes separated by a single character', () => {
+    expect(extractAll('LOB-EN001 LOB-EN002')).toEqual(['LOB-EN001', 'LOB-EN002']);
+  });
+
+  it('lists a repeated code once', () => {
+    expect(extractAll('LOB-EN001 lob-en001')).toEqual(['LOB-EN001']);
+  });
+
+  it('returns nothing when there is no code', () => {
+    expect(extractAll('HELLO 123')).toEqual([]);
+  });
+});
+
+describe('readingVariants', () => {
+  it('puts the code with look-alike letters turned into digits first', () => {
+    expect(readingVariants('LOB-ENOOS')).toEqual(['LOB-EN005', 'LOB-ENOOS']);
+    expect(readingVariants('SDK-OI8')).toEqual(['SDK-018', 'SDK-OI8']);
+    expect(readingVariants('LOB-FRZBG')).toEqual(['LOB-FR286', 'LOB-FRZBG']);
+  });
+
+  it('gives a clean code once', () => {
+    expect(readingVariants('LOB-EN001')).toEqual(['LOB-EN001']);
+  });
+
+  it('keeps special-edition numbers as the fallback', () => {
+    expect(readingVariants('DUEA-ENSE1')).toEqual(['DUEA-EN5E1', 'DUEA-ENSE1']);
   });
 });

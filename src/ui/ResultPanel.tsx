@@ -115,7 +115,7 @@ export function ResultPanel({ db, initialCode, hint, onAdd, onClose }: Props) {
       <div className="row">
         {onClose && (
           <button className="grow" onClick={onClose}>
-            Retry
+            Dismiss
           </button>
         )}
         <button className="primary grow" disabled={!canAdd} onClick={add}>

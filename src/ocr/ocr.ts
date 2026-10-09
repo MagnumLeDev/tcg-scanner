@@ -1,8 +1,7 @@
 import { createWorker, PSM, type Worker } from 'tesseract.js';
-import { extract } from '../setCode';
-import { toHighContrastGrey } from './preprocess';
+import { binarise, keepTextSizedInk } from './preprocess';
 
-const SCALE = 3;
+const SCALE = 2;
 const WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
 
 let workerPromise: Promise<Worker> | null = null;
@@ -13,7 +12,8 @@ function getWorker(): Promise<Worker> {
       const worker = await createWorker('eng');
       await worker.setParameters({
         tessedit_char_whitelist: WHITELIST,
-        tessedit_pageseg_mode: PSM.SINGLE_LINE,
+        // The crop is a band of the card, not a tight box: the code can be anywhere in it.
+        tessedit_pageseg_mode: PSM.SPARSE_TEXT,
       });
       return worker;
     })();
@@ -31,28 +31,41 @@ export async function prepare(): Promise<void> {
   await getWorker();
 }
 
-// Reads the crop; if no set code comes out, reads it again with the opposite
-// polarity, because the automatic dark/light choice can be wrong on some frames.
-export async function recognise(source: HTMLCanvasElement): Promise<string> {
-  const first = await read(source, false);
-  if (extract(first) !== null) return first;
-  const second = await read(source, true);
-  return extract(second) !== null ? second : first;
+let lastPicture: HTMLCanvasElement | null = null;
+
+// The cleaned-up picture most recently given to the text reader, for the details view.
+export function pictureLastRead(): HTMLCanvasElement | null {
+  return lastPicture;
 }
 
-async function read(source: HTMLCanvasElement, flip: boolean): Promise<string> {
-  const canvas = document.createElement('canvas');
-  canvas.width = source.width * SCALE;
-  canvas.height = source.height * SCALE;
-  const context = canvas.getContext('2d')!;
-  context.imageSmoothingEnabled = true;
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+// Reads every piece of text in the crop. The crop is cleaned up twice, once for
+// dark text and once for light text, and both versions are read in one go, one
+// above the other, because the frame colour of the card is not known in advance.
+export async function recognise(source: HTMLCanvasElement): Promise<string> {
+  const width = source.width * SCALE;
+  const height = source.height * SCALE;
+  if (width === 0 || height === 0) return '';
 
-  const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  toHighContrastGrey(image.data, flip);
-  context.putImageData(image, 0, 0);
+  const enlarged = document.createElement('canvas');
+  enlarged.width = width;
+  enlarged.height = height;
+  const context = enlarged.getContext('2d', { willReadFrequently: true })!;
+  context.imageSmoothingEnabled = true;
+  context.drawImage(source, 0, 0, width, height);
+
+  const stacked = document.createElement('canvas');
+  stacked.width = width;
+  stacked.height = height * 2;
+  const output = stacked.getContext('2d')!;
+  for (const lightText of [false, true]) {
+    const image = context.getImageData(0, 0, width, height);
+    binarise(image.data, width, height, lightText);
+    keepTextSizedInk(image.data, width, height);
+    output.putImageData(image, 0, lightText ? height : 0);
+  }
 
   const worker = await getWorker();
-  const { data } = await worker.recognize(canvas);
+  lastPicture = stacked;
+  const { data } = await worker.recognize(stacked);
   return data.text;
 }

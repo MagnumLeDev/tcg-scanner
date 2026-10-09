@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CardDatabase } from '../cardDatabase';
+import { match } from '../cardMatch';
 import type { NewEntry } from '../collection';
-import { prepare, recognise } from '../ocr/ocr';
-import { extract } from '../setCode';
+import { createDetector } from '../detector';
+import { pictureLastRead, prepare, recognise } from '../ocr/ocr';
 import { CameraView } from './CameraView';
 import { ResultPanel } from './ResultPanel';
 
@@ -12,20 +13,25 @@ type Props = {
   onOpenSettings: () => void;
 };
 
-type Reading = { id: number; code: string; hint: string | null };
+// A card the camera found (detected) or a code the user is typing (not detected).
+type Reading = { id: number; code: string; detected: boolean };
 
-const NO_CODE = 'No code found — move closer and retry, or type the code.';
+// What the text reader was given and what it read, shown on request to help
+// work out why a card is not recognised.
+type Details = { text: string; picture: string | null; milliseconds: number };
 
 export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState<Reading | null>(null);
   const [manualId, setManualId] = useState(0);
+  const [showDetails, setShowDetails] = useState(false);
+  const [details, setDetails] = useState<Details | null>(null);
   const [reader, setReader] = useState<'loading' | 'ready' | 'failed'>('loading');
   const hasData = db.hasData();
+  const detector = useMemo(() => createDetector((code) => match(db, code)), [db]);
 
-  // Fetch the text reader as soon as the screen opens, not on the first scan,
-  // so that the first scan is quick and scanning works offline afterwards.
+  // Fetch the text reader as soon as the screen opens, so that scanning starts
+  // quickly and works offline afterwards.
   useEffect(() => {
     if (!hasData) return;
     let active = true;
@@ -49,18 +55,27 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
     );
   }
 
-  async function handleCapture(canvas: HTMLCanvasElement) {
-    setBusy(true);
-    try {
-      const raw = await recognise(canvas);
-      const code = extract(raw);
-      setReading({ id: Date.now(), code: code ?? raw.trim(), hint: code ? null : NO_CODE });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      setReading({ id: Date.now(), code: '', hint: `Reading failed (${detail}). Type the code instead.` });
-    } finally {
-      setBusy(false);
+  async function handleFrame(canvas: HTMLCanvasElement) {
+    const started = performance.now();
+    const text = await recognise(canvas);
+    if (showDetails) {
+      setDetails({
+        text: text.replace(/\s+/g, ' ').trim(),
+        picture: pictureLastRead()?.toDataURL('image/png') ?? null,
+        milliseconds: Math.round(performance.now() - started),
+      });
     }
+    const detection = detector.feed(text);
+    if (!detection) return;
+    navigator.vibrate?.(60);
+    setReading({ id: Date.now(), code: detection.code, detected: true });
+  }
+
+  // The card is usually still in front of the camera when the panel closes, so
+  // its code is set aside until the card has been taken away.
+  function close(current: Reading) {
+    if (current.detected) detector.dismiss(current.code);
+    setReading(null);
   }
 
   if (cameraError) {
@@ -84,24 +99,40 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
 
   return (
     <div className="scan">
-      <CameraView busy={busy || reader === 'loading'} onCapture={handleCapture} onError={setCameraError} />
-      {!reading && reader === 'loading' && (
-        <p className="pad muted">Getting the text reader ready. This download happens once.</p>
+      <CameraView paused={reading !== null || reader !== 'ready'} onFrame={handleFrame} onError={setCameraError} />
+
+      {!reading && (
+        <div className="scan-status">
+          {reader === 'loading' && <p>Getting the text reader ready. This download happens once.</p>}
+          {reader === 'failed' && (
+            <p className="error">The text reader could not be downloaded. Connect to the internet and reopen the app.</p>
+          )}
+          {reader === 'ready' && <p>Hold a card inside the outline</p>}
+          <div className="row">
+            <button onClick={() => setReading({ id: Date.now(), code: '', detected: false })}>Type the code</button>
+            <button onClick={() => setShowDetails((shown) => !shown)}>{showDetails ? 'Hide details' : 'Details'}</button>
+          </div>
+        </div>
       )}
-      {!reading && reader === 'failed' && (
-        <p className="pad error">The text reader could not be downloaded. Connect to the internet, then tap Scan.</p>
+
+      {showDetails && !reading && (
+        <div className="scan-details">
+          {details?.picture && <img src={details.picture} alt="What the text reader sees" />}
+          <div>{details ? `Read in ${details.milliseconds} ms: ${details.text || '(nothing)'}` : 'Waiting for a reading…'}</div>
+        </div>
       )}
+
       {reading && (
         <ResultPanel
           key={reading.id}
           db={db}
           initialCode={reading.code}
-          hint={reading.hint}
+          hint={null}
           onAdd={(entry) => {
             onAdd(entry);
-            setReading(null);
+            close(reading);
           }}
-          onClose={() => setReading(null)}
+          onClose={() => close(reading)}
         />
       )}
     </div>

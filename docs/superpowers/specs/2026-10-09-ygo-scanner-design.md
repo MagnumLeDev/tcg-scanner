@@ -25,7 +25,7 @@ Text recognition runs in the browser. This is less accurate than native recognit
 In scope:
 
 - Subscribing to card databases, automatic update check each time the app opens, and a force refresh button
-- Scan screen with camera, aiming frame, capture, and confirm/correct step
+- Scan screen with a full-screen camera and card outline, automatic detection, and a confirm/correct step
 - Card identification by set code, offline
 - Language detected from the code and stored with the card
 - Card list with quantity and delete
@@ -36,7 +36,6 @@ Out of scope:
 
 - Cardmarket links and prices (next version)
 - Accounts, sync, or shared lists
-- Continuous (hands-free) scanning
 - Interface languages other than English
 - Recognising a card from its artwork or name
 
@@ -85,14 +84,17 @@ A handful of malformed codes in the source (13, e.g. `DB49`, `MF03-EN0??`) do no
 
 - If the user has no subscribed database with data on the phone, the screen shows a prompt leading to Settings instead of the camera.
 - Live rear-camera preview (`getUserMedia` with `facingMode: "environment"`, video element with `playsinline` for iOS).
-- A fixed rectangular frame overlaid on the preview, wide and short, sized for one line of text.
-- A capture button. On tap, the app grabs the current frame, runs recognition, and shows a result panel.
+- The preview fills the screen, with a card-shaped outline (59 × 86 proportions). The user holds the card roughly inside it; they do not aim at the code.
+- No capture button. The app reads continuously the band of the outline where the set code is printed (under the artwork, on the right, with generous margins).
+- A card is detected when a code read from the band matches a card in a subscribed database and is read twice within three readings. Letters in the number that look like digits (O, I, S, B…) are put right before matching. The result panel then opens and reading pauses; on Android the phone vibrates.
+- After the panel is closed, the same code is ignored until the card has left the view.
+- "Type the code" opens the result panel empty, for cards that will not read. "Details" shows what the text reader was given and what it read.
 - Result panel:
   - Editable text field holding the recognised code. Editing re-runs the match.
   - Match result: card name and set name, or "not found" with up to 5 tappable near-miss suggestions.
   - **Language** selector, pre-filled from the code, changeable by the user.
   - **Rarity** selector, shown only when the code has more than one rarity.
-  - "Add" button (enabled only when a card is matched and a rarity is set) and "Retry" button.
+  - "Add" button (enabled only when a card is matched and a rarity is set) and "Dismiss" button.
 
 ### My cards
 
@@ -122,10 +124,14 @@ Starts and stops the camera stream and returns the pixels inside the aiming fram
 
 ### `ocr`
 
-`recognise(canvas) → string`. Preprocesses the crop (greyscale, contrast stretch, 2–3× upscale), then runs Tesseract.js with:
+`recognise(canvas) → string`. Enlarges the crop 2×, turns it into black ink on white by comparing each pixel with its neighbourhood (once for dark text, once for light text), erases ink too large or too small to be a code character, then runs Tesseract.js once on both versions stacked, with:
 
 - character whitelist `A–Z`, `0–9`, `-`
-- single-line page segmentation mode
+- sparse-text page segmentation mode
+
+### `detector`
+
+`createDetector(find)` turns the stream of readings into detections: `feed(text)` returns a card once its code is confirmed, `dismiss(code)` sets a code aside until its card has left the view.
 
 Tesseract.js and its model are loaded lazily on first visit to the Scan screen and cached by the service worker.
 
