@@ -1,16 +1,16 @@
 # Yu-Gi-Oh Card Scanner — Design
 
-Date: 2026-10-09 (revised the same day: Cardmarket deferred, offline card database added, card language made explicit)
+Date: 2026-10-09 (revised the same day: Cardmarket deferred, card database subscriptions added, card language made explicit)
 
 ## Purpose
 
 A phone app for Maxime and a few friends, on iPhone and Android, that:
 
 1. Reads the set code printed under a Yu-Gi-Oh card's artwork (e.g. `LOB-FR001`) with the camera.
-2. Identifies the card from that code, using a card database downloaded onto the phone.
+2. Identifies the card from that code, using card databases the user has subscribed to, which are stored on the phone and kept up to date automatically.
 3. Keeps a list of the cards scanned on that phone, including each card's **language**, because language affects price.
 
-It will never be published on an app store. Success for this version means a friend can open a link, install the app to their home screen, download the card database once, and then scan a card in a few seconds and see it correctly identified with the right language.
+It will never be published on an app store. Success for this version means a friend can open a link, install the app to their home screen, subscribe to the card database once, and then scan a card in a few seconds and see it correctly identified with the right language.
 
 A later version will add a button per card that opens its Cardmarket page. This version stores everything that link will need (card name, set name, rarity, language) but builds no link.
 
@@ -24,13 +24,13 @@ Text recognition runs in the browser. This is less accurate than native recognit
 
 In scope:
 
-- Download and update of the card database on the phone
+- Subscribing to card databases, automatic update check each time the app opens, and a force refresh button
 - Scan screen with camera, aiming frame, capture, and confirm/correct step
 - Card identification by set code, offline
 - Language detected from the code and stored with the card
 - Card list with quantity and delete
 - CSV export and import
-- Installable, usable offline once the database is downloaded
+- Installable, usable offline once a database is downloaded
 
 Out of scope:
 
@@ -53,9 +53,20 @@ Out of scope:
 | Hosting | GitHub Pages, deployed by a GitHub Actions workflow |
 | Location | `~/projects/ygo-scanner` |
 
-## Card database
+## Card databases
 
-Source: YGOPRODeck, free and usable directly from a browser (it sends `Access-Control-Allow-Origin: *`).
+The app has a built-in list of available card databases. The user subscribes to the ones they want; only subscribed databases are downloaded and used for matching. This version ships with one available database, YGOPRODeck. Others can be added later by writing a new source definition, with no change to the rest of the app.
+
+### Subscription behaviour
+
+- **Subscribe:** downloads the database immediately and marks it subscribed.
+- **Every time the app opens:** for each subscribed database, if the phone is online, the app asks the source for its current version. If it differs from the version on the phone, the new data is downloaded in the background and swapped in when complete. This never blocks the app: scanning keeps working on the existing data, and a short notice reports the result ("Card database updated — 42 new printings"). If the phone is offline or the check fails, the app stays silent and uses what it has.
+- **Force refresh:** re-downloads the database regardless of version, for when the data looks wrong or incomplete.
+- **Unsubscribe:** asks for confirmation, then deletes that database's data from the phone. Cards already in the user's list are untouched, since the list stores its own copy of each card's details.
+
+### YGOPRODeck
+
+Free and usable directly from a browser (it sends `Access-Control-Allow-Origin: *`).
 
 - `GET https://db.ygoprodeck.com/api/v7/cardinfo.php` returns every card with its printings. Measured on 2026-10-09: about 2.9 MB over the network (compressed), 21 MB as JSON, 14,599 cards, 44,659 printings, 38,541 distinct set codes.
 - `GET https://db.ygoprodeck.com/api/v7/checkDBVer.php` returns the database version and last update date.
@@ -72,7 +83,7 @@ A handful of malformed codes in the source (13, e.g. `DB49`, `MF03-EN0??`) do no
 
 ### Scan
 
-- If no card database is on the phone, the screen shows a "Download card database" prompt instead of the camera.
+- If the user has no subscribed database with data on the phone, the screen shows a prompt leading to Settings instead of the camera.
 - Live rear-camera preview (`getUserMedia` with `facingMode: "environment"`, video element with `playsinline` for iOS).
 - A fixed rectangular frame overlaid on the preview, wide and short, sized for one line of text.
 - A capture button. On tap, the app grabs the current frame, runs recognition, and shows a result panel.
@@ -92,8 +103,12 @@ A handful of malformed codes in the source (13, e.g. `DB49`, `MF03-EN0??`) do no
 
 ### Settings
 
-- Card database status: version, date downloaded, number of printings.
-- "Download card database" / "Update card database" button with a progress indicator. Pressing it checks `checkDBVer.php`; if the version on the phone is current it says so and does nothing.
+A "Card databases" list with one row per available database, showing:
+
+- Name and a Subscribe / Unsubscribe button.
+- For a subscribed database: version, date last updated, date last checked, number of printings.
+- A "Force refresh" button with a progress indicator.
+- The error from the last failed download, if any.
 
 Navigation is a three-tab bottom bar: Scan, My cards, Settings.
 
@@ -147,9 +162,9 @@ Language from region:
 | `SC` | Simplified Chinese |
 | anything else | Unknown (user picks) |
 
-### `cardDatabase`
+### `sources`
 
-Owns the downloaded card data.
+The built-in list of available databases. Each source is a small object:
 
 ```ts
 type Printing = {
@@ -158,15 +173,43 @@ type Printing = {
   setName: string;
   rarity: string;
 };
+
+type Source = {
+  id: string;                              // e.g. "ygoprodeck"
+  name: string;                            // shown in Settings
+  fetchVersion(): Promise<string>;
+  fetchPrintings(): Promise<Printing[]>;
+};
 ```
 
-- `status() → { version, downloadedAt, count } | null`
-- `download(onProgress)`: fetches `cardinfo.php`, flattens it to `Printing[]`, skips codes that fail the set-code pattern, and replaces the IndexedDB contents in a single transaction, so a failed download leaves the previous database intact.
-- `isUpToDate() → boolean`: compares the stored version with `checkDBVer.php`.
-- `find(code) → Printing[]`: all printings for an exact code (one per rarity).
+The YGOPRODeck source implements `fetchVersion` with `checkDBVer.php` and `fetchPrintings` by fetching `cardinfo.php`, flattening it to one `Printing` per card-and-set entry, and skipping codes that fail the set-code pattern.
+
+### `cardDatabase`
+
+Owns subscriptions and the downloaded data. Knows nothing about any specific source.
+
+```ts
+type Subscription = {
+  sourceId: string;
+  version: string;
+  updatedAt: string;   // ISO timestamp of last successful download
+  checkedAt: string;   // ISO timestamp of last version check
+  count: number;
+  lastError: string | null;
+};
+```
+
+- `subscriptions() → Subscription[]`
+- `subscribe(sourceId, onProgress)`: downloads and stores the source's printings, then records the subscription.
+- `unsubscribe(sourceId)`: deletes the subscription and its printings.
+- `checkForUpdates() → UpdateResult[]`: for each subscription, calls `fetchVersion`; if it differs from the stored version, downloads and swaps in the new data. Returns, per source, whether it was updated and how many printings were added. Failures are recorded in `lastError` and do not throw.
+- `forceRefresh(sourceId, onProgress)`: downloads and swaps in the data regardless of version.
+- `find(code) → Printing[]`: all printings for an exact code across all subscribed sources (one per rarity; identical name + set + rarity from two sources is returned once).
 - `suggest(code) → string[]`: up to 5 known codes within edit distance 1 of the given code, for the near-miss suggestions.
 
-On app start the printings are loaded into an in-memory map keyed by code, so matching is instant.
+Printings are stored in IndexedDB tagged with their `sourceId`. Replacing a source's data happens in a single transaction, so a failed or interrupted download leaves the previous data intact.
+
+On app start the printings of all subscribed sources are loaded into an in-memory map keyed by code, so matching is instant. `checkForUpdates` then runs in the background; if it updates anything, the map is rebuilt.
 
 ### `cardMatch`
 
@@ -202,8 +245,9 @@ Import asks whether to **merge** (add quantities for matching entries) or **repl
 
 | Situation | Behaviour |
 |---|---|
-| No card database on the phone | Scan screen shows the download prompt instead of the camera |
-| Database download fails or is interrupted | Error message with Retry; any previous database is kept |
+| No subscribed database with data on the phone | Scan screen shows a prompt leading to Settings instead of the camera |
+| Subscribe or force refresh fails or is interrupted | Error shown on that database's row with Retry; any previous data is kept |
+| Automatic check on app open fails or phone is offline | Silent; existing data is used; the error is recorded on the database's row in Settings |
 | Camera permission denied or unavailable | Message explaining how to allow the camera, plus a manual code entry field so the app remains usable |
 | No text matching the pattern | "No code found — move closer and retry", field left editable |
 | Code not in database | "Card not found" with near-miss suggestions, field left editable, Add disabled |
@@ -213,22 +257,23 @@ Import asks whether to **merge** (add quantities for matching entries) or **repl
 
 ## Offline behaviour
 
-The service worker caches the app shell and the recognition model. Once the card database is downloaded, scanning, matching, and the list all work with no connection. Only downloading or updating the database needs the network.
+The service worker caches the app shell and the recognition model. Once a card database is downloaded, scanning, matching, and the list all work with no connection. Only subscribing, the update check on app open, and force refresh need the network.
 
 ## Testing
 
 - **Unit (Vitest):**
   - `setCode`: extraction, parsing, language mapping, candidates, across English, French, regionless, old European, and special-edition codes.
-  - `cardDatabase`: flattening a sample of the real API response, skipping malformed codes, `find` with multiple rarities, `suggest`, failed download keeping the old data (IndexedDB faked with `fake-indexeddb`, `fetch` mocked).
+  - `sources`: the YGOPRODeck source flattening a sample of the real API response and skipping malformed codes (`fetch` mocked).
+  - `cardDatabase`, using a fake source and `fake-indexeddb`: subscribe, unsubscribe removing only that source's data, `checkForUpdates` downloading only when the version changed and reporting the number of new printings, `forceRefresh` downloading even when the version is unchanged, a failed download keeping the old data and recording the error, `find` with multiple rarities and across two sources, `suggest`.
   - `cardMatch`: candidate order, French code resolving to the English entry.
   - `collection`: add/merge/quantity/remove, same code with different language or rarity kept as separate entries, corrupt storage.
   - `csv`: round trip, quoting, bad input.
-- **Manual on real phones:** camera, recognition accuracy, database download, install to home screen, on one iPhone (Safari) and one Android phone (Chrome).
+- **Manual on real phones:** camera, recognition accuracy, subscribing, the update check on app open, install to home screen, on one iPhone (Safari) and one Android phone (Chrome).
 
 ## Milestones
 
 1. **Scan proof.** Project scaffold, `camera`, `ocr`, `setCode`, and a bare Scan screen that shows the recognised code and detected language. Deployed to GitHub Pages and tried on a real phone with real cards. If recognition is unusable, stop and revisit the approach before building further.
-2. **Database and matching.** `cardDatabase`, `cardMatch`, the Settings screen, and the full result panel with language and rarity selectors.
+2. **Databases and matching.** `sources`, `cardDatabase`, `cardMatch`, the Settings screen with subscribe and force refresh, the update check on app open, and the full result panel with language and rarity selectors.
 3. **List, export, install.** `collection`, the My cards screen, `csv`, the PWA manifest, service worker, and icons.
 
 ## Requirements on the user
