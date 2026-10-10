@@ -48,3 +48,17 @@ export function findTextBoxes(probability: Float32Array, width: number, height: 
   }
   return boxes;
 }
+
+const NAME_ZONE = 0.22; // the card name lies in this top part of the picture
+const NAME_MIN_WIDTH = 0.35; // and spans at least this much of its width
+const MAX_NAME_LINES = 2;
+
+// The boxes that may hold the card name when the card is roughly inside the
+// outline: wide lines near the top, widest first.
+export function nameBoxes(boxes: Box[], width: number, height: number): Box[] {
+  const span = (box: Box) => box.right - box.left + 1;
+  return boxes
+    .filter((box) => (box.top + box.bottom) / 2 < height * NAME_ZONE && span(box) >= width * NAME_MIN_WIDTH)
+    .sort((a, b) => span(b) - span(a))
+    .slice(0, MAX_NAME_LINES);
+}

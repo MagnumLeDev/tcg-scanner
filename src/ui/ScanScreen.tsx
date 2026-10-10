@@ -61,15 +61,16 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   async function handleFrame(canvas: HTMLCanvasElement) {
     lastCrop.current = canvas;
     const started = performance.now();
-    const lines = await recognise(canvas);
+    const read = await recognise(canvas);
     if (showDetails) {
+      const show = (lines: typeof read.codes) => lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`).join(' · ');
       setDetails({
-        text: lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`).join(' · '),
+        text: [read.names.length > 0 ? `Name: ${show(read.names)}` : '', show(read.codes)].filter(Boolean).join(' — '),
         picture: pictureLastRead()?.toDataURL('image/jpeg', 0.7) ?? null,
         milliseconds: Math.round(performance.now() - started),
       });
     }
-    const detection = detector.feed(lines);
+    const detection = detector.feed(read.codes);
     if (!detection) return;
     navigator.vibrate?.(60);
     setReading({ id: Date.now(), code: detection.code, detected: true });

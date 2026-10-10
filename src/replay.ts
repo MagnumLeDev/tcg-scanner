@@ -45,10 +45,11 @@ async function replay(pictureUrl: string, card: Rect) {
   let detected: string | null = null;
   for (let i = 0; i < READINGS; i++) {
     const started = performance.now();
-    const lines = await recognise(canvas);
+    const read = await recognise(canvas);
     const milliseconds = Math.round(performance.now() - started);
-    readings.push({ milliseconds, codes: lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`) });
-    detected ??= detector.feed(lines)?.code ?? null;
+    const show = (lines: typeof read.codes) => lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`);
+    readings.push({ milliseconds, codes: show(read.codes), names: show(read.names) });
+    detected ??= detector.feed(read.codes)?.code ?? null;
   }
   return { detected, readings };
 }

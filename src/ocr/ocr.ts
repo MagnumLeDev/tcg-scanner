@@ -1,11 +1,12 @@
 import * as ort from 'onnxruntime-web/wasm';
-import { decode, type Line } from './decode';
+import { decode, type Line, type Reading } from './decode';
 import { detectionInput, recognitionInput } from './tensors';
-import { findTextBoxes, type Box } from './textBoxes';
+import { findTextBoxes, nameBoxes, type Box } from './textBoxes';
 
 const DETECTION_SIDE = 960; // the picture is shrunk to at most this size to find text
 const LINE_HEIGHT = 48; // the height at which the reading model takes a line
 const MAX_LINE_WIDTH = 480;
+const MAX_NAME_WIDTH = 640; // card names are long
 const MAX_LINES = 8; // lines read per picture, to bound the work
 const CODE_SHAPE = 5.5; // a set code is about this many times wider than tall
 
@@ -75,11 +76,13 @@ export function restart(): void {
 }
 
 // Finds the lines of text in the picture and reads those shaped like a set code.
-// Readings alternate between the whole picture and a close-up of part of it.
-export async function recognise(whole: HTMLCanvasElement): Promise<Line[]> {
-  if (whole.width === 0 || whole.height === 0) return [];
+// Readings alternate between the whole picture and a close-up of part of it;
+// on the whole picture, the lines where the card name is are read as well.
+export async function recognise(whole: HTMLCanvasElement): Promise<Reading> {
+  if (whole.width === 0 || whole.height === 0) return { codes: [], names: [] };
   const reader = await getReader();
-  const source = closeUpNext ? cut(whole, CLOSE_UP) : whole;
+  const closeUp = closeUpNext;
+  const source = closeUp ? cut(whole, CLOSE_UP) : whole;
   closeUpNext = !closeUpNext;
 
   // The model that finds text wants sides that are multiples of 32.
@@ -98,30 +101,36 @@ export async function recognise(whole: HTMLCanvasElement): Promise<Line[]> {
   });
   const probability = found[reader.detection.outputNames[0]].data as Float32Array;
 
+  const all = findTextBoxes(probability, width, height);
+  const titles = closeUp ? [] : nameBoxes(all, width, height);
+
   const shape = (box: Box) => (box.right - box.left + 1) / (box.bottom - box.top + 1);
-  const boxes = findTextBoxes(probability, width, height)
-    .filter((box) => shape(box) >= 2.5 && shape(box) <= 11)
+  const boxes = all
+    .filter((box) => !titles.includes(box) && shape(box) >= 2.5 && shape(box) <= 11)
     .sort((a, b) => Math.abs(shape(a) - CODE_SHAPE) - Math.abs(shape(b) - CODE_SHAPE))
     .slice(0, MAX_LINES);
 
-  const lines: Line[] = [];
   const scaleX = source.width / width;
   const scaleY = source.height / height;
-  for (const box of boxes) {
-    lines.push(await readLine(reader, source, {
-      left: box.left * scaleX,
-      top: box.top * scaleY,
-      right: (box.right + 1) * scaleX,
-      bottom: (box.bottom + 1) * scaleY,
-    }));
-  }
+  const fullSize = (box: Box): Box => ({
+    left: box.left * scaleX,
+    top: box.top * scaleY,
+    right: (box.right + 1) * scaleX,
+    bottom: (box.bottom + 1) * scaleY,
+  });
+  const codes: Line[] = [];
+  for (const box of boxes) codes.push(await readLine(reader, source, fullSize(box), MAX_LINE_WIDTH));
+  const names: Line[] = [];
+  for (const box of titles) names.push(await readLine(reader, source, fullSize(box), MAX_NAME_WIDTH));
 
-  context.strokeStyle = '#ff2d55';
   context.lineWidth = 2;
+  context.strokeStyle = '#ff2d55';
   for (const box of boxes) context.strokeRect(box.left, box.top, box.right - box.left + 1, box.bottom - box.top + 1);
+  context.strokeStyle = '#34c759';
+  for (const box of titles) context.strokeRect(box.left, box.top, box.right - box.left + 1, box.bottom - box.top + 1);
   lastPicture = small;
 
-  return lines.filter((line) => line.text !== '');
+  return { codes: codes.filter((line) => line.text !== ''), names: names.filter((line) => line.text !== '') };
 }
 
 function cut(picture: HTMLCanvasElement, part: typeof CLOSE_UP): HTMLCanvasElement {
@@ -135,10 +144,10 @@ function cut(picture: HTMLCanvasElement, part: typeof CLOSE_UP): HTMLCanvasEleme
 }
 
 // Reads one line, cut out of the full-size picture so that small print keeps its detail.
-async function readLine(reader: Reader, source: HTMLCanvasElement, box: Box): Promise<Line> {
+async function readLine(reader: Reader, source: HTMLCanvasElement, box: Box, maxWidth: number): Promise<Line> {
   const boxWidth = box.right - box.left;
   const boxHeight = box.bottom - box.top;
-  const width = Math.max(8, Math.min(MAX_LINE_WIDTH, Math.round((boxWidth * LINE_HEIGHT) / boxHeight)));
+  const width = Math.max(8, Math.min(maxWidth, Math.round((boxWidth * LINE_HEIGHT) / boxHeight)));
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = LINE_HEIGHT;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findTextBoxes } from './textBoxes';
+import { findTextBoxes, nameBoxes, type Box } from './textBoxes';
 
 // A 100 x 60 map of how likely each pixel is to be text, with text where `text` says so.
 function map(text: (x: number, y: number) => boolean): Float32Array {
@@ -40,5 +40,34 @@ describe('findTextBoxes', () => {
   it('ignores pixels below the threshold', () => {
     const data = new Float32Array(100 * 60).fill(0.2);
     expect(findTextBoxes(data, 100, 60)).toEqual([]);
+  });
+});
+
+describe('nameBoxes', () => {
+  // A picture 1000 wide and 1000 high.
+  const box = (left: number, top: number, right: number, bottom: number): Box => ({ left, top, right, bottom });
+  const name = box(100, 90, 700, 140);
+  const type = box(450, 170, 850, 200);
+  const code = box(700, 650, 880, 680);
+  const effect = box(100, 720, 900, 760);
+  const speck = box(100, 20, 180, 40);
+
+  it('keeps wide lines near the top, widest first', () => {
+    expect(nameBoxes([code, type, effect, name, speck], 1000, 1000)).toEqual([name, type]);
+  });
+
+  it('keeps at most two', () => {
+    const third = box(100, 50, 600, 80);
+    expect(nameBoxes([name, type, third], 1000, 1000)).toEqual([name, third]);
+  });
+
+  it('judges position by the middle of the line', () => {
+    expect(nameBoxes([box(100, 200, 700, 239)], 1000, 1000)).toHaveLength(1);
+    expect(nameBoxes([box(100, 201, 700, 241)], 1000, 1000)).toHaveLength(0);
+  });
+
+  it('finds none when nothing is there', () => {
+    expect(nameBoxes([], 1000, 1000)).toEqual([]);
+    expect(nameBoxes([code, effect], 1000, 1000)).toEqual([]);
   });
 });

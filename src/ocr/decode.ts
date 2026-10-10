@@ -1,5 +1,8 @@
 export type Line = { text: string; confidence: number };
 
+// What one look at the picture gave: lines shaped like a set code, and lines that may be the card name.
+export type Reading = { codes: Line[]; names: Line[] };
+
 // Turns the reading model's output into text. The model gives, for each step
 // along the line, a score per character; position 0 means "nothing here". A
 // character held over several steps is one character.
