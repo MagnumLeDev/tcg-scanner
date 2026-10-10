@@ -60,6 +60,11 @@ describe('buildNameIndex', () => {
     expect(index.find('Change of Heart')?.cardId).toBe(8);
   });
 
+  it('does not guess the language of a name that is the same in several', () => {
+    expect(index.find('Change of Heart')?.language).toBe('Unknown');
+    expect(index.find('Dark Magician')?.language).toBe('English');
+  });
+
   it('ignores names and readings shorter than four characters', () => {
     expect(index.find('Pot')).toBeNull();
     expect(index.find('Po')).toBeNull();

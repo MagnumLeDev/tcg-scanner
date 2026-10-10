@@ -33,7 +33,9 @@ function cards(printings: Printing[] = PRINTINGS): Cards {
 // Lines read with too little confidence to be trusted on a single reading.
 const unsure = (text: string): Line[] => text.split('\n').map((line) => ({ text: line, confidence: 0.5 }));
 const sure = (text: string): Line[] => [{ text, confidence: 0.95 }];
-const read = (codes: Line[], name = '') => ({ codes, names: name ? [{ text: name, confidence: 0.6 }] : [] });
+// A whole-picture reading unless said otherwise; close-ups never carry a name.
+const read = (codes: Line[], name = '', whole = true) => ({ codes, names: name ? [{ text: name, confidence: 0.6 }] : [], whole });
+const closeUp = (codes: Line[] = []) => read(codes, '', false);
 const nothing = read([]);
 
 const codeOf = (detection: Detection | null) => (detection?.kind === 'code' ? detection.code : null);
@@ -258,6 +260,50 @@ describe('createDetector', () => {
       detector.feed(nothing);
       detector.feed(nothing);
       expect(codeOf(detector.feed(read(sure('LOB-EN001'))))).toBe('LOB-EN001');
+    });
+  });
+
+  describe('review fixes', () => {
+    it('does not correct a confidently read existing code from a name read earlier', () => {
+      const detector = createDetector(cards());
+      // The name of card 1 is read, then the card is swapped for card 2 of the same set.
+      detector.feed(read([], BLUE_EYES));
+      expect(detector.feed(closeUp(sure('LOB-FR002')))).toBeNull();
+      expect(codeOf(detector.feed(read(sure('LOB-FR002'), 'HITOTSU-ME GIANT')))).toBe('LOB-FR002');
+    });
+
+    it('does not correct an unsure existing code from a name read earlier either', () => {
+      const detector = createDetector(cards());
+      detector.feed(read([], BLUE_EYES));
+      expect(detector.feed(closeUp(unsure('LOB-FR002')))).toBeNull();
+    });
+
+    it('reports another printing of a card dismissed through its code at once', () => {
+      const detector = createDetector(cards());
+      detector.dismiss(detector.feed(read(sure('LOB-EN001'), BLUE_EYES))!);
+      expect(codeOf(detector.feed(read(sure('SDK-001'), BLUE_EYES)))).toBe('SDK-001');
+    });
+
+    it('keeps a corrected code dismissed while its card stays in view', () => {
+      const detector = createDetector(cards());
+      detector.dismiss(detector.feed(read(unsure('LOB-FR007'), BLUE_EYES))!);
+      for (let i = 0; i < 8; i++) expect(detector.feed(read(unsure('LOB-FR007'), BLUE_EYES))).toBeNull();
+    });
+
+    it('keeps a card dismissed by name through one missed name reading', () => {
+      const detector = createDetector(cards());
+      detector.dismiss({ kind: 'card', cardId: 1, name: 'x', language: 'French' });
+      const readings = [read([], BLUE_EYES), closeUp(), nothing, closeUp(), read([], BLUE_EYES), closeUp(), read([], BLUE_EYES), closeUp(), read([], BLUE_EYES)];
+      for (const reading of readings) expect(detector.feed(reading)).toBeNull();
+    });
+
+    it('releases a card dismissed by name after two whole-picture readings without it', () => {
+      const detector = createDetector(cards());
+      detector.dismiss({ kind: 'card', cardId: 1, name: 'x', language: 'French' });
+      for (const reading of [nothing, closeUp(), nothing, closeUp()]) detector.feed(reading);
+      detector.feed(read([], BLUE_EYES));
+      detector.feed(closeUp());
+      expect(cardOf(detector.feed(read([], BLUE_EYES)))).toBe(1);
     });
   });
 

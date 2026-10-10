@@ -79,7 +79,7 @@ export function restart(): void {
 // Readings alternate between the whole picture and a close-up of part of it;
 // on the whole picture, the lines where the card name is are read as well.
 export async function recognise(whole: HTMLCanvasElement): Promise<Reading> {
-  if (whole.width === 0 || whole.height === 0) return { codes: [], names: [] };
+  if (whole.width === 0 || whole.height === 0) return { codes: [], names: [], whole: true };
   const reader = await getReader();
   const closeUp = closeUpNext;
   const source = closeUp ? cut(whole, CLOSE_UP) : whole;
@@ -130,7 +130,7 @@ export async function recognise(whole: HTMLCanvasElement): Promise<Reading> {
   for (const box of titles) context.strokeRect(box.left, box.top, box.right - box.left + 1, box.bottom - box.top + 1);
   lastPicture = small;
 
-  return { codes: codes.filter((line) => line.text !== ''), names: names.filter((line) => line.text !== '') };
+  return { codes: codes.filter((line) => line.text !== ''), names: names.filter((line) => line.text !== ''), whole: !closeUp };
 }
 
 function cut(picture: HTMLCanvasElement, part: typeof CLOSE_UP): HTMLCanvasElement {

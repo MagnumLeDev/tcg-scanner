@@ -25,11 +25,14 @@ export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, 
 
   const [language, setLanguage] = useState<Language>('Unknown');
   const [rarity, setRarity] = useState('');
+  const [chosen, setChosen] = useState(''); // the code last filled in from the list of printings
 
   // Whenever the code changes, restart from what the code itself says.
   useEffect(() => {
+    // A code picked from the list is the database's, not one read on the card:
+    // the language is then the one the name was read in, or left to the user.
     const fromCode = code ? languageOf(parse(code).region) : 'Unknown';
-    setLanguage(code && initialCard && parse(code).region === '' ? initialCard.language : fromCode);
+    setLanguage(code && initialCard && code === chosen ? initialCard.language : fromCode);
     setRarity(rarities.length === 1 ? rarities[0] : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, found?.matchedCode]);
@@ -73,7 +76,14 @@ export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, 
           </div>
           <label className="stack">
             <span className="muted">Printing</span>
-            <select value="" onChange={(event) => setText(printedCode(event.target.value, initialCard.language))}>
+            <select
+              value=""
+              onChange={(event) => {
+                const printed = printedCode(event.target.value, initialCard.language);
+                setChosen(printed);
+                setText(printed);
+              }}
+            >
               <option value="">Choose a set</option>
               {choices.map((printing) => (
                 <option key={printing.code} value={printing.code}>

@@ -81,7 +81,7 @@ A pure module, built once whenever the database's data changes, from every name 
 - **Normalising:** lower case, accents removed (Unicode decomposition, combining marks dropped), everything but `a-z0-9` removed. The reader's character list lacks several accented letters (`ç`, `ñ`, `ã`, `ß`, `œ`), so matching must not depend on them.
 - **Index:** each normalised name is filed under its three-letter sequences. A lookup collects the names sharing the most sequences with the text read and keeps the best 20.
 - **Scoring:** those 20 are scored by edit distance: `score = 1 − distance / length of the longer text`.
-- **Result:** the best card, when its score is at least 0.8, its normalised name is at least 4 characters long, and it beats the best *different* card by at least 0.1. Otherwise nothing. The same card found under two languages is not a competitor to itself; the language of the best-scoring name is reported.
+- **Result:** the best card, when its score is at least 0.8, its normalised name is at least 4 characters long, and it beats the best *different* card by at least 0.1. Otherwise nothing. The same card found under two languages is not a competitor to itself; the language of the best-scoring name is reported, or `Unknown` when the name is spelled the same in several languages, so that the user chooses it.
 
 A name that is the start of longer names ("Dark Magician", "Dark Magician Girl") is safe: the reading of the full line is compared with full names.
 
@@ -101,7 +101,7 @@ Because the name comes from whole-picture readings and the code often from close
 |---|---|---|
 | Exists in database | Same card | Accepted at once, at any confidence |
 | Exists in database | None | As today: confidence ≥ 0.8, or read twice within 3 readings |
-| Exists in database | A different card, which has a printing one character away from the code read | The named card's printing is accepted |
+| Exists in database | A different card, read in this same reading, which has a printing one character away from the code read | The named card's printing is accepted |
 | Exists in database | Any other different card | Not accepted on one reading; accepted when the code is read twice within 3 readings |
 | Not in database | A card that has a printing one character away from a code candidate | That printing is accepted |
 | None | Same name match in two readings within 3 | Accepted as a card with no code |
@@ -110,7 +110,9 @@ The rows are tried from top to bottom; the first that applies decides.
 
 A detection is either `{ code, match }` as today, or `{ cardId, name, language }` for the last row.
 
-Dismissing works as today for codes. A card accepted by name is dismissed by card id, and released after 3 readings without that name.
+A name remembered from an earlier reading never overrides a code that exists: the card may have been swapped in between.
+
+Dismissing works as today for codes, and the dismissed card is also not reported by its name; another printing of the same card can be scanned at once. A card accepted by name is dismissed under its name and all its codes, and released after 2 whole-picture readings without it (close-ups cannot show a name, so they do not count).
 
 ## Result panel
 

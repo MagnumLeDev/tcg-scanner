@@ -25,12 +25,17 @@ export type Detector = {
 
 const SURE = 0.8; // a line read with at least this confidence is trusted on its own
 const WINDOW = 3; // otherwise a code or a name is trusted once read twice within this many readings; a name is also remembered this long
-const RELEASE = 3; // readings in a row without a dismissed card before it counts again
+const RELEASE = 3; // readings in a row without a dismissed code before it counts again
+const NAME_RELEASE = 2; // whole-picture readings in a row without a dismissed card before its name counts again
 
 export function createDetector(cards: Cards): Detector {
   const lastSeen = new Map<string, number>(); // code -> number of the reading it was last in
   const dismissedCodes = new Map<string, number>(); // code -> readings in a row without it
-  const dismissedCards = new Map<number, number>(); // card id -> readings in a row without it
+  // Cards set aside, with the whole-picture readings in a row without them. A
+  // card dismissed through its name is blocked entirely; one dismissed through a
+  // code is blocked by name only, so another printing of it can be scanned next.
+  const dismissedCards = new Map<number, number>();
+  const dismissedNames = new Map<number, number>();
   // The name comes from whole-picture readings and the code often from
   // close-ups, so the last name is kept for the readings that follow.
   let named: { match: NameMatch; at: number; before: number | null } | null = null;
@@ -53,14 +58,16 @@ export function createDetector(cards: Cards): Detector {
   }
 
   function blocked(detection: Detection): boolean {
-    if (detection.kind === 'card') return dismissedCards.has(detection.cardId);
+    if (detection.kind === 'card') return dismissedCards.has(detection.cardId) || dismissedNames.has(detection.cardId);
     return dismissedCodes.has(detection.code) || detection.match.printings.some((printing) => dismissedCards.has(printing.cardId));
   }
 
-  function age<Key>(dismissed: Map<Key, number>, inView: (key: Key) => boolean): void {
+  // counts says whether this reading could have shown the card at all.
+  function age<Key>(dismissed: Map<Key, number>, inView: (key: Key) => boolean, release: number, counts = true): void {
     for (const [key, misses] of dismissed) {
       if (inView(key)) dismissed.set(key, 0);
-      else if (misses + 1 >= RELEASE) dismissed.delete(key);
+      else if (!counts) continue;
+      else if (misses + 1 >= release) dismissed.delete(key);
       else dismissed.set(key, misses + 1);
     }
   }
@@ -72,7 +79,7 @@ export function createDetector(cards: Cards): Detector {
   }
 
   return {
-    feed({ codes, names }) {
+    feed({ codes, names, whole }) {
       reading++;
 
       for (const line of names) {
@@ -89,14 +96,18 @@ export function createDetector(cards: Cards): Detector {
       let corrected: Detection | null = null; // the named card's code, one character from what was read
       for (const line of codes) {
         const candidates = candidateCodes(line.text);
+        let exists = false;
         for (const code of candidates) {
           const match = cards.find(code);
           if (!match) continue;
+          exists = true;
           seen.set(code, { match, sure: line.confidence >= SURE || seen.get(code)?.sure === true });
           if (name && isCard(match, name.cardId)) agreed ??= { kind: 'code', code, match };
           break;
         }
-        if (name && !agreed && !corrected) {
+        // A code that exists is only put right by a name read in the same look:
+        // a name remembered from before may belong to the card that was just taken away.
+        if (name && !agreed && !corrected && (!exists || named?.at === reading)) {
           for (const candidate of candidates) {
             corrected = nearCode(candidate, name.cardId);
             if (corrected) break;
@@ -107,8 +118,11 @@ export function createDetector(cards: Cards): Detector {
       const cardsInView = new Set<number>();
       if (named?.at === reading) cardsInView.add(named.match.cardId);
       for (const { match } of seen.values()) for (const printing of match.printings) cardsInView.add(printing.cardId);
-      age(dismissedCodes, (code) => seen.has(code));
-      age(dismissedCards, (cardId) => cardsInView.has(cardId));
+      // A corrected code is in view too, though it was not read as such.
+      age(dismissedCodes, (code) => seen.has(code) || (corrected?.kind === 'code' && corrected.code === code), RELEASE);
+      // Names come from whole-picture readings only, so close-ups do not count as misses.
+      age(dismissedCards, (cardId) => cardsInView.has(cardId), NAME_RELEASE, whole);
+      age(dismissedNames, (cardId) => cardsInView.has(cardId), NAME_RELEASE, whole);
 
       if (agreed) return blocked(agreed) ? null : accept(agreed);
       if (corrected && !blocked(corrected)) return accept(corrected);
@@ -139,7 +153,7 @@ export function createDetector(cards: Cards): Detector {
       lastSeen.delete(detection.code);
       // 0 marks data saved before names existed: no card to tell apart.
       for (const printing of detection.match.printings) {
-        if (printing.cardId) dismissedCards.set(printing.cardId, 0);
+        if (printing.cardId) dismissedNames.set(printing.cardId, 0);
       }
     },
   };

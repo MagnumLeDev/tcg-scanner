@@ -95,7 +95,9 @@ export function buildNameIndex(entries: NameEntry[]): NameIndex {
       if (!best || best.score < MIN_SCORE) return null;
       const rival = scored.find((other) => other.cardId !== best.cardId);
       if (rival && best.score - rival.score < MIN_LEAD) return null;
-      return best;
+      // A name spelled the same in several languages does not say which one the card is in.
+      const sameInOthers = scored.some((other) => other.cardId === best.cardId && other.score === best.score && other.language !== best.language);
+      return sameInOthers ? { ...best, language: 'Unknown' } : best;
     },
   };
 }
