@@ -69,6 +69,17 @@ export function languageOf(region: string): Language {
   return REGION_LANGUAGE[region] ?? 'Unknown';
 }
 
+const MODERN_MARKER: Partial<Record<Language, string>> = { French: 'FR', German: 'DE', Italian: 'IT', Spanish: 'SP', Portuguese: 'PT' };
+const OLD_MARKER: Partial<Record<Language, string>> = { French: 'F', German: 'G', Italian: 'I', Spanish: 'S', Portuguese: 'P' };
+
+// The code as it is printed on a card in the given language, from the database's
+// (English) form. Left as it is when the code carries no language marker.
+export function printedCode(code: string, language: Language): string {
+  const { prefix, region, number } = parse(code);
+  const marker = region === 'EN' ? MODERN_MARKER[language] : region === 'E' ? OLD_MARKER[language] : undefined;
+  return marker ? `${prefix}-${marker}${number}` : code;
+}
+
 export function lookupCandidates(code: string): string[] {
   const { prefix, region, number } = parse(code);
   const fixed = number.replace(/O/g, '0').replace(/[IL]/g, '1');

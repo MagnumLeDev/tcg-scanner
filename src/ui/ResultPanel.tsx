@@ -2,29 +2,34 @@ import { useEffect, useState } from 'react';
 import type { CardDatabase } from '../cardDatabase';
 import { match, suggestions } from '../cardMatch';
 import type { NewEntry } from '../collection';
-import { extract, LANGUAGES, languageOf, parse, type Language } from '../setCode';
+import { extract, LANGUAGES, languageOf, parse, printedCode, type Language } from '../setCode';
 
 type Props = {
   db: CardDatabase;
   initialCode: string;
+  // A card recognised by its name, whose code could not be read.
+  initialCard?: { cardId: number; name: string; language: Language } | null;
   hint: string | null;
   onAdd: (entry: NewEntry) => void;
   onClose: (() => void) | null;
 };
 
-export function ResultPanel({ db, initialCode, hint, onAdd, onClose }: Props) {
+export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, onClose }: Props) {
   const [text, setText] = useState(initialCode);
   const code = extract(text);
   const found = code ? match(db, code) : null;
   const near = code && !found ? suggestions(db, code) : [];
   const rarities = found ? [...new Set(found.printings.map((p) => p.rarity))] : [];
+  // While no code is entered, a card known by name offers the sets it was printed in.
+  const choices = initialCard && !code ? [...new Map(db.printingsOf(initialCard.cardId).map((p) => [p.code, p])).values()] : [];
 
   const [language, setLanguage] = useState<Language>('Unknown');
   const [rarity, setRarity] = useState('');
 
   // Whenever the code changes, restart from what the code itself says.
   useEffect(() => {
-    setLanguage(code ? languageOf(parse(code).region) : 'Unknown');
+    const fromCode = code ? languageOf(parse(code).region) : 'Unknown';
+    setLanguage(code && initialCard && parse(code).region === '' ? initialCard.language : fromCode);
     setRarity(rarities.length === 1 ? rarities[0] : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, found?.matchedCode]);
@@ -59,6 +64,26 @@ export function ResultPanel({ db, initialCode, hint, onAdd, onClose }: Props) {
           spellCheck={false}
         />
       </label>
+
+      {initialCard && !code && (
+        <div className="stack">
+          <div>
+            <strong>{initialCard.name}</strong>
+            <div className="muted">Recognised by its name. Choose the set, or type the code printed on the card.</div>
+          </div>
+          <label className="stack">
+            <span className="muted">Printing</span>
+            <select value="" onChange={(event) => setText(printedCode(event.target.value, initialCard.language))}>
+              <option value="">Choose a set</option>
+              {choices.map((printing) => (
+                <option key={printing.code} value={printing.code}>
+                  {printing.code} — {printing.setName}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       {code && found && (
         <div>

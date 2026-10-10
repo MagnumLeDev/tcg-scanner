@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CODE_PATTERN, extract, candidateCodes, languageOf, lookupCandidates, parse } from './setCode';
+import { CODE_PATTERN, extract, candidateCodes, languageOf, lookupCandidates, parse, printedCode } from './setCode';
 
 describe('extract', () => {
   it('returns a clean code unchanged', () => {
@@ -158,5 +158,31 @@ describe('candidateCodes', () => {
     expect(candidateCodes('HELLO')).toEqual([]);
     expect(candidateCodes('ATK/2500 DEF-2100')).toEqual([]);
     expect(candidateCodes('')).toEqual([]);
+  });
+});
+
+describe('printedCode', () => {
+  it('puts the language marker into a modern code', () => {
+    expect(printedCode('RA01-EN051', 'French')).toBe('RA01-FR051');
+    expect(printedCode('RA01-EN051', 'German')).toBe('RA01-DE051');
+    expect(printedCode('RA01-EN051', 'Italian')).toBe('RA01-IT051');
+    expect(printedCode('RA01-EN051', 'Portuguese')).toBe('RA01-PT051');
+  });
+
+  it('puts the one-letter marker into an old code', () => {
+    expect(printedCode('LOB-E001', 'French')).toBe('LOB-F001');
+    expect(printedCode('LOB-E001', 'German')).toBe('LOB-G001');
+  });
+
+  it('leaves the code alone for English, for codes without a marker, and for other languages', () => {
+    expect(printedCode('RA01-EN051', 'English')).toBe('RA01-EN051');
+    expect(printedCode('SDK-001', 'French')).toBe('SDK-001');
+    expect(printedCode('RA01-EN051', 'Japanese')).toBe('RA01-EN051');
+    expect(printedCode('RA01-EN051', 'Unknown')).toBe('RA01-EN051');
+  });
+
+  it('gives codes that read back as that language', () => {
+    expect(languageOf(parse(printedCode('RA01-EN051', 'French')).region)).toBe('French');
+    expect(languageOf(parse(printedCode('LOB-E001', 'Italian')).region)).toBe('Italian');
   });
 });
