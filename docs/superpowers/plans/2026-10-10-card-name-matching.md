@@ -1990,3 +1990,7 @@ git commit -m "Record replay results for card name matching"
 - [ ] **Step 5: Report to Maxime**
 
 Give, for each picture: the code and the name the app read, and what it detected. Ask Maxime for the real code and name of each card. Put the confirmed values into `scripts/replay-pictures.json` (replacing the provisional ones and the `null`s), run `npm run replay` once more, and commit as `Set the confirmed codes and names of the replay pictures`.
+
+## Baseline (Task 1)
+
+Before any change: 5/7 detected (missed: IMG_9750, IMG_9755); average per reading 480, 556, 480 ms (three runs, desktop headless Chromium). Runs vary by about 15 % on their own, so comparisons use the median of three.

@@ -69,6 +69,11 @@ const CLOSE_UP = { left: 0.3, top: 0.52, width: 0.7, height: 0.36 };
 
 let closeUpNext = false;
 
+// Makes the next reading a whole-picture one, so that replays always start the same way.
+export function restart(): void {
+  closeUpNext = false;
+}
+
 // Finds the lines of text in the picture and reads those shaped like a set code.
 // Readings alternate between the whole picture and a close-up of part of it.
 export async function recognise(whole: HTMLCanvasElement): Promise<Line[]> {
