@@ -1,7 +1,8 @@
 import { IDBFactory as FakeIDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 import { createCardDatabase, withinOne } from './cardDatabase';
-import type { Printing, Source } from './sources/types';
+import type { Language } from './setCode';
+import type { CardName, Printing, Source } from './sources/types';
 
 // A fresh, empty in-memory IndexedDB per call, typed as the browser's factory.
 const freshIdb = (): IDBFactory => new FakeIDBFactory() as unknown as IDBFactory;
@@ -19,6 +20,10 @@ function fakeSource(id: string, printings: Printing[]) {
     versionCalls: 0,
     printingsCalls: 0,
     hold: null as Promise<void> | null,
+    languages: [] as Language[],
+    names: {} as Partial<Record<Language, CardName[]>>,
+    failNames: new Set<Language>(),
+    namesCalls: [] as Language[],
   };
   const source: Source = {
     id,
@@ -34,9 +39,13 @@ function fakeSource(id: string, printings: Printing[]) {
       if (state.fail) throw new Error('offline');
       return state.printings;
     },
-    nameLanguages: [],
-    async fetchNames() {
-      return [];
+    get nameLanguages() {
+      return state.languages;
+    },
+    async fetchNames(language) {
+      state.namesCalls.push(language);
+      if (state.failNames.has(language)) throw new Error('offline');
+      return state.names[language] ?? [];
     },
   };
   return { source, state };
@@ -384,5 +393,182 @@ describe('card database', () => {
     expect(db.suggest('LOB-EN00X')).toEqual(['LOB-EN001', 'LOB-EN002', 'LOB-EN003', 'LOB-EN004', 'LOB-EN005']);
     expect(db.suggest('L0B-EN001')).toEqual(['LOB-EN001']);
     expect(db.suggest('ZZZ-EN999')).toEqual([]);
+  });
+});
+
+describe('card names', () => {
+  function named() {
+    const fake = fakeSource('a', [BEWD, DM]);
+    fake.state.languages = ['French', 'German'];
+    fake.state.names = {
+      French: [[1, 'Dragon Blanc aux Yeux Bleus'], [2, 'Magicien Sombre'], [99, 'Carte Inconnue']],
+      German: [[1, 'Blauäugiger w. Drache']],
+    };
+    return fake;
+  }
+
+  it('finds a card by its English name with no names downloaded', async () => {
+    const db = createCardDatabase([fakeSource('a', [BEWD, DM]).source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    expect(db.findByName('Dark Magician')).toMatchObject({ cardId: 2, language: 'English' });
+  });
+
+  it('finds nothing by name while empty', async () => {
+    const db = createCardDatabase([named().source], freshIdb(), clock());
+    await db.load();
+    expect(db.findByName('Dark Magician')).toBeNull();
+    expect(db.printingsOf(1)).toEqual([]);
+  });
+
+  it('downloads the names of each language, one after the other, on subscribe', async () => {
+    const { source, state } = named();
+    const db = createCardDatabase([source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    expect(state.namesCalls).toEqual(['French', 'German']);
+    expect(db.findByName('Magicien Sombre')).toMatchObject({ cardId: 2, language: 'French' });
+    expect(db.findByName('Blauaugiger w. Drache')).toMatchObject({ cardId: 1, language: 'German' });
+  });
+
+  it('ignores names of cards that have no printing', async () => {
+    const db = createCardDatabase([named().source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    expect(db.findByName('Carte Inconnue')).toBeNull();
+  });
+
+  it('gives the printings of a card', async () => {
+    const db = createCardDatabase([fakeSource('a', [BEWD, ULTRA, SECRET]).source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    expect(db.printingsOf(3)).toEqual([ULTRA, SECRET]);
+    expect(db.printingsOf(12345)).toEqual([]);
+  });
+
+  it('keeps names across a reload', async () => {
+    const idb = freshIdb();
+    const { source } = named();
+    const first = createCardDatabase([source], idb, clock());
+    await first.load();
+    await first.subscribe('a');
+    const second = createCardDatabase([source], idb, clock());
+    await second.load();
+    expect(second.findByName('Magicien Sombre')).toMatchObject({ cardId: 2 });
+  });
+
+  it('keeps the other languages when one fails, and the subscription succeeds', async () => {
+    const { source, state } = named();
+    state.failNames.add('French');
+    const db = createCardDatabase([source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    expect(db.subscriptions()[0].lastError).toBeNull();
+    expect(db.find('LOB-EN001')).toEqual([BEWD]);
+    expect(db.findByName('Magicien Sombre')).toBeNull();
+    expect(db.findByName('Blauaugiger w. Drache')).toMatchObject({ cardId: 1 });
+  });
+
+  it('fetches a missing language at the next update check, and only that one', async () => {
+    const { source, state } = named();
+    state.failNames.add('French');
+    const db = createCardDatabase([source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    state.failNames.clear();
+    state.namesCalls.length = 0;
+    const results = await db.checkForUpdates();
+    expect(results).toEqual([{ sourceId: 'a', updated: false, added: 0, error: null }]);
+    expect(state.namesCalls).toEqual(['French']);
+    expect(state.printingsCalls).toBe(1);
+    expect(db.findByName('Magicien Sombre')).toMatchObject({ cardId: 2 });
+  });
+
+  it('fetches nothing at an update check when every language is present', async () => {
+    const { source, state } = named();
+    const db = createCardDatabase([source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    state.namesCalls.length = 0;
+    await db.checkForUpdates();
+    expect(state.namesCalls).toEqual([]);
+  });
+
+  it('keeps the old names when a refresh cannot fetch them', async () => {
+    const { source, state } = named();
+    const db = createCardDatabase([source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    state.failNames.add('French');
+    await db.forceRefresh('a');
+    expect(db.findByName('Magicien Sombre')).toMatchObject({ cardId: 2 });
+  });
+
+  it('removes names on unsubscribe', async () => {
+    const idb = freshIdb();
+    const { source } = named();
+    const db = createCardDatabase([source], idb, clock());
+    await db.load();
+    await db.subscribe('a');
+    await db.unsubscribe('a');
+    expect(db.findByName('Magicien Sombre')).toBeNull();
+    const again = createCardDatabase([source], idb, clock());
+    await again.load();
+    expect(again.findByName('Magicien Sombre')).toBeNull();
+  });
+});
+
+describe('data saved before names existed', () => {
+  // Writes a version 1 database by hand: two stores, printings without card ids.
+  async function versionOne(idb: IDBFactory): Promise<void> {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = idb.open('ygo-scanner', 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('subscriptions', { keyPath: 'sourceId' });
+        request.result.createObjectStore('printings');
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = db.transaction(['subscriptions', 'printings'], 'readwrite');
+    transaction.objectStore('subscriptions').put({ sourceId: 'a', version: '1', updatedAt: 't', checkedAt: 't', count: 1, lastError: null });
+    transaction.objectStore('printings').put([{ code: 'LOB-EN001', name: 'Blue-Eyes White Dragon', setName: 'LOB', rarity: 'Ultra Rare' }], 'a');
+    await new Promise<void>((resolve) => (transaction.oncomplete = () => resolve()));
+    db.close();
+  }
+
+  it('loads version 1 data and still finds cards by code', async () => {
+    const idb = freshIdb();
+    await versionOne(idb);
+    const db = createCardDatabase([fakeSource('a', [BEWD]).source], idb, clock());
+    await db.load();
+    expect(db.hasData()).toBe(true);
+    expect(db.find('LOB-EN001')).toEqual([{ ...BEWD, cardId: 0 }]);
+    expect(db.findByName('Blue-Eyes White Dragon')).toBeNull();
+    expect(db.printingsOf(0)).toEqual([]);
+  });
+
+  it('downloads the cards again at the next update check, though the version is the same', async () => {
+    const idb = freshIdb();
+    await versionOne(idb);
+    const { source, state } = fakeSource('a', [BEWD]);
+    const db = createCardDatabase([source], idb, clock());
+    await db.load();
+    const results = await db.checkForUpdates();
+    expect(results[0]).toMatchObject({ updated: true, error: null });
+    expect(state.printingsCalls).toBe(1);
+    expect(db.find('LOB-EN001')).toEqual([BEWD]);
+    expect(db.findByName('Blue-Eyes White Dragon')).toMatchObject({ cardId: 1 });
+  });
+
+  it('keeps working by code when that download fails', async () => {
+    const idb = freshIdb();
+    await versionOne(idb);
+    const { source, state } = fakeSource('a', [BEWD]);
+    state.fail = true;
+    const db = createCardDatabase([source], idb, clock());
+    await db.load();
+    await db.checkForUpdates();
+    expect(db.find('LOB-EN001')).toHaveLength(1);
   });
 });
