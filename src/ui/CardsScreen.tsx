@@ -5,6 +5,7 @@ import { saveTextFile } from '../saveFile';
 
 type Props = {
   entries: Entry[];
+  priceLink: (entry: Entry) => string;
   onSetQuantity: (key: string, quantity: number) => void;
   onRemove: (key: string) => void;
   onImport: (entries: Entry[], mode: 'merge' | 'replace') => void;
@@ -13,7 +14,7 @@ type Props = {
 
 type Pending = { entries: Entry[]; skipped: number };
 
-export function CardsScreen({ entries, onSetQuantity, onRemove, onImport, onGoScan }: Props) {
+export function CardsScreen({ entries, priceLink, onSetQuantity, onRemove, onImport, onGoScan }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -114,6 +115,9 @@ export function CardsScreen({ entries, onSetQuantity, onRemove, onImport, onGoSc
                 {entry.code} · {entry.language} · {entry.rarity}
               </div>
               <div className="muted">{entry.setName}</div>
+              <a className="link" href={priceLink(entry)} target="_blank" rel="noopener noreferrer">
+                Price on Cardmarket
+              </a>
             </div>
             <div className="quantity">
               <button aria-label="One fewer" onClick={() => decrease(entry)}>

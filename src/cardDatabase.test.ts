@@ -431,6 +431,18 @@ describe('card names', () => {
     expect(db.findByName('Blauaugiger w. Drache')).toMatchObject({ cardId: 1, language: 'German' });
   });
 
+  it('looks only among the names of the language asked for', async () => {
+    const db = createCardDatabase([named().source], freshIdb(), clock());
+    await db.load();
+    await db.subscribe('a');
+    expect(db.findByName('Magicien Sombre', 'French')).toMatchObject({ cardId: 2, language: 'French' });
+    expect(db.findByName('Magicien Sombre', 'German')).toBeNull();
+    expect(db.findByName('Magicien Sombre', 'English')).toBeNull();
+    expect(db.findByName('Dark Magician', 'English')).toMatchObject({ cardId: 2, language: 'English' });
+    expect(db.findByName('Dark Magician', 'French')).toBeNull();
+    expect(db.findByName('Dark Magician', 'Japanese')).toBeNull();
+  });
+
   it('ignores names of cards that have no printing', async () => {
     const db = createCardDatabase([named().source], freshIdb(), clock());
     await db.load();

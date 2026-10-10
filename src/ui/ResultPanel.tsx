@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { CardDatabase } from '../cardDatabase';
+import { cardmarketUrl } from '../cardmarket';
 import { match, onlyCode, suggestions } from '../cardMatch';
 import type { NewEntry } from '../collection';
 import { extract, LANGUAGES, languageOf, parse, printedCode, type Language } from '../setCode';
 
 type Props = {
   db: CardDatabase;
+  language: Language; // the language the cards are scanned in
   initialCode: string;
   // A card recognised by its name, whose code could not be read.
   initialCard?: { cardId: number; name: string; language: Language } | null;
@@ -14,7 +16,7 @@ type Props = {
   onClose: (() => void) | null;
 };
 
-export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, onClose }: Props) {
+export function ResultPanel({ db, language: scanLanguage, initialCode, initialCard = null, hint, onAdd, onClose }: Props) {
   // A card known by name that exists in one set only needs no choice: its code is filled in.
   const [single] = useState(() =>
     initialCard && !initialCode ? (onlyCode(db.printingsOf(initialCard.cardId), initialCard.language) ?? '') : '',
@@ -35,7 +37,9 @@ export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, 
   useEffect(() => {
     // A code picked from the list is the database's, not one read on the card:
     // the language is then the one the name was read in, or left to the user.
-    const fromCode = code ? languageOf(parse(code).region) : 'Unknown';
+    // A code without a language marker is taken to be in the language being scanned.
+    const region = code ? parse(code).region : '';
+    const fromCode = !code ? 'Unknown' : region === '' ? scanLanguage : languageOf(region);
     setLanguage(code && initialCard && code === chosen ? initialCard.language : fromCode);
     setRarity(rarities.length === 1 ? rarities[0] : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,6 +160,16 @@ export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, 
           <button className="grow" onClick={onClose}>
             Dismiss
           </button>
+        )}
+        {found && (
+          <a
+            className="button"
+            href={cardmarketUrl({ name: found.printings[0].name, setName: found.printings[0].setName, language }, rarities.length)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Cardmarket
+          </a>
         )}
         <button className="primary grow" disabled={!canAdd} onClick={add}>
           Add

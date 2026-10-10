@@ -2,15 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CardDatabase } from '../cardDatabase';
 import { match } from '../cardMatch';
 import type { NewEntry } from '../collection';
-import { createDetector, type Detection } from '../detector';
+import { createDetector, inOneLanguage, type Detection } from '../detector';
 import { pictureLastRead, prepare, recognise } from '../ocr/ocr';
 import { sampleFileName } from '../sample';
+import type { Language } from '../setCode';
 import { saveFile } from '../saveFile';
 import { CameraView } from './CameraView';
 import { ResultPanel } from './ResultPanel';
 
 type Props = {
   db: CardDatabase;
+  language: Language; // only cards in this language are recognised
   onAdd: (entry: NewEntry) => void;
   onOpenSettings: () => void;
 };
@@ -22,7 +24,7 @@ type Reading = { id: number; detection: Detection | null };
 // work out why a card is not recognised.
 type Details = { text: string; picture: string | null; milliseconds: number };
 
-export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
+export function ScanScreen({ db, language, onAdd, onOpenSettings }: Props) {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
   const [manualId, setManualId] = useState(0);
@@ -32,8 +34,11 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   const [reader, setReader] = useState<'loading' | 'ready' | 'failed'>('loading');
   const hasData = db.hasData();
   const detector = useMemo(
-    () => createDetector({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf }),
-    [db],
+    () =>
+      createDetector(
+        inOneLanguage({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf }, language),
+      ),
+    [db, language],
   );
 
   // Fetch the text reader as soon as the screen opens, so that scanning starts
@@ -105,6 +110,7 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
         <ResultPanel
           key={manualId}
           db={db}
+          language={language}
           initialCode=""
           hint="You can still add cards by typing their set code."
           onAdd={(entry) => {
@@ -127,7 +133,7 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
           {reader === 'failed' && (
             <p className="error">The text reader could not be downloaded. Connect to the internet and reopen the app.</p>
           )}
-          {reader === 'ready' && <p>Hold a card inside the outline</p>}
+          {reader === 'ready' && <p>Hold a card in {language} inside the outline</p>}
           <div className="row">
             <button onClick={() => setReading({ id: Date.now(), detection: null })}>Type the code</button>
             <button onClick={() => setShowDetails((shown) => !shown)}>{showDetails ? 'Hide details' : 'Details'}</button>
@@ -149,6 +155,7 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
         <ResultPanel
           key={reading.id}
           db={db}
+          language={language}
           initialCode={reading.detection?.kind === 'code' ? reading.detection.code : ''}
           initialCard={reading.detection?.kind === 'card' ? reading.detection : null}
           hint={null}

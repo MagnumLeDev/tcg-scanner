@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { createCardDatabase, type UpdateResult } from './cardDatabase';
+import { cardmarketUrl } from './cardmarket';
 import { createCollection, type Entry, type NewEntry } from './collection';
+import { readScanLanguage, saveScanLanguage, SCAN_LANGUAGES } from './scanLanguage';
+import type { Language } from './setCode';
 import { SOURCES } from './sources';
 import { CardsScreen } from './ui/CardsScreen';
 import { ScanScreen } from './ui/ScanScreen';
@@ -31,6 +34,17 @@ export default function App() {
   const [, setRevision] = useState(0);
   const refresh = () => setRevision((revision) => revision + 1);
   const [entries, setEntries] = useState<Entry[]>(collection.all());
+  // The language of the cards being scanned, kept from one visit to the next.
+  const [language, setLanguage] = useState<Language>(() => readScanLanguage(localStorage, navigator.language));
+
+  function chooseLanguage(chosen: Language) {
+    setLanguage(chosen);
+    saveScanLanguage(localStorage, chosen);
+  }
+
+  function priceLink(entry: Entry): string {
+    return cardmarketUrl(entry, new Set(db.find(entry.matchedCode).map((printing) => printing.rarity)).size);
+  }
 
   function showSaved(saved: boolean, message: string) {
     setEntries(collection.all());
@@ -93,15 +107,25 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">YGO Scanner</header>
+      <header className="topbar row">
+        <span className="grow">YGO Scanner</span>
+        <select aria-label="Language of the cards you scan" value={language} onChange={(event) => chooseLanguage(event.target.value as Language)}>
+          {SCAN_LANGUAGES.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </header>
       <main className="screen">
         {!ready && <p className="pad muted">Loading…</p>}
         {ready && tab === 'scan' && (
-          <ScanScreen db={db} onAdd={handleAdd} onOpenSettings={() => setTab('settings')} />
+          <ScanScreen db={db} language={language} onAdd={handleAdd} onOpenSettings={() => setTab('settings')} />
         )}
         {ready && tab === 'cards' && (
           <CardsScreen
             entries={entries}
+            priceLink={priceLink}
             onSetQuantity={(key, quantity) => handleChange(collection.setQuantity(key, quantity))}
             onRemove={(key) => handleChange(collection.remove(key))}
             onImport={handleImport}

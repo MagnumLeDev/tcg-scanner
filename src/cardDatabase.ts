@@ -83,6 +83,9 @@ export function createCardDatabase(
   const namesBySource = new Map<string, StoredNames>();
   let byCard = new Map<number, Printing[]>();
   let nameIndex: NameIndex = buildNameIndex([]);
+  // The names of one language alone are indexed the first time that language is asked for.
+  let nameEntries: NameEntry[] = [];
+  const indexOf = new Map<Language, NameIndex>();
 
   const activities = new Map<string, Phase>(); // what is running now, per source
   const failures = new Map<string, string>(); // why the last attempt failed, for sources with no subscription
@@ -140,6 +143,8 @@ export function createCardDatabase(
       }
     }
     nameIndex = buildNameIndex(entries);
+    nameEntries = entries;
+    indexOf.clear();
   }
 
   function sourceById(sourceId: string): Source {
@@ -405,9 +410,16 @@ export function createCardDatabase(
       return near.sort().slice(0, MAX_SUGGESTIONS);
     },
 
-    // The card a name read by the camera most probably belongs to, in any language held.
-    findByName(text: string): NameMatch | null {
-      return nameIndex.find(text);
+    // The card a name read by the camera most probably belongs to: among the
+    // names of one language when it is given, otherwise in any language held.
+    findByName(text: string, language?: Language): NameMatch | null {
+      if (!language) return nameIndex.find(text);
+      let index = indexOf.get(language);
+      if (!index) {
+        index = buildNameIndex(nameEntries.filter((entry) => entry.language === language));
+        indexOf.set(language, index);
+      }
+      return index.find(text);
     },
 
     printingsOf(cardId: number): Printing[] {

@@ -2,7 +2,7 @@ import { withinOne } from './cardDatabase';
 import type { Match } from './cardMatch';
 import type { NameMatch } from './nameIndex';
 import type { Reading } from './ocr/decode';
-import { candidateCodes, parse, type Language } from './setCode';
+import { candidateCodes, inLanguage, parse, type Language } from './setCode';
 import type { Printing } from './sources/types';
 
 export type Cards = {
@@ -10,6 +10,19 @@ export type Cards = {
   findByName(text: string): NameMatch | null;
   printingsOf(cardId: number): Printing[];
 };
+
+// The cards of one language only: codes printed in another language and names
+// written in another language are not found.
+export function inOneLanguage(
+  cards: Pick<Cards, 'find' | 'printingsOf'> & { findByName(text: string, language: Language): NameMatch | null },
+  language: Language,
+): Cards {
+  return {
+    find: (code) => (inLanguage(code, language) ? cards.find(code) : null),
+    findByName: (text) => cards.findByName(text, language),
+    printingsOf: cards.printingsOf,
+  };
+}
 
 // A card found by its code, or by its name alone when no code could be read.
 export type Detection =

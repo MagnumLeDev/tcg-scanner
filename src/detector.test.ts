@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from './cardMatch';
-import { createDetector, type Cards, type Detection } from './detector';
+import { createDetector, inOneLanguage, type Cards, type Detection } from './detector';
 import type { NameMatch } from './nameIndex';
 import type { Line } from './ocr/decode';
 import type { Printing } from './sources/types';
@@ -320,5 +320,35 @@ describe('createDetector', () => {
       detector.dismiss(detector.feed(read(sure('LOB-EN001')))!);
       expect(codeOf(detector.feed(read(sure('DUEA-ENSE1'))))).toBe('DUEA-ENSE1');
     });
+  });
+});
+
+describe('scanning in one language', () => {
+  // Names are looked up in the language asked for, as the card database does.
+  const french = (language: 'French' | 'English') =>
+    inOneLanguage({ ...cards(), findByName: (text, asked) => (NAMES[text]?.language === asked ? NAMES[text] : null) }, language);
+
+  it('accepts a code printed in that language', () => {
+    const detector = createDetector(french('French'));
+    expect(detector.feed(read(sure('LOB-FR001')))).toMatchObject({ kind: 'code', code: 'LOB-FR001' });
+  });
+
+  it('ignores a code printed in another language', () => {
+    const detector = createDetector(french('French'));
+    expect(detector.feed(read(sure('LOB-EN001')))).toBeNull();
+    expect(detector.feed(read(sure('LOB-EN001')))).toBeNull();
+  });
+
+  it('accepts a code that has no language marker', () => {
+    const detector = createDetector(french('French'));
+    expect(detector.feed(read(sure('SDK-001')))).toMatchObject({ kind: 'code', code: 'SDK-001' });
+  });
+
+  it('recognises names in that language only', () => {
+    const detector = createDetector(french('English'));
+    detector.feed(read([], 'DRAGON BLANC AUX YEUX BLEUS'));
+    expect(detector.feed(read([], 'DRAGON BLANC AUX YEUX BLEUS'))).toBeNull();
+    detector.feed(read([], 'HITOTSU-ME GIANT'));
+    expect(detector.feed(read([], 'HITOTSU-ME GIANT'))).toMatchObject({ kind: 'card', cardId: 2 });
   });
 });

@@ -69,6 +69,13 @@ export function languageOf(region: string): Language {
   return REGION_LANGUAGE[region] ?? 'Unknown';
 }
 
+// Whether a card with this code can be in the given language. A code without a
+// language marker says nothing, so it fits every language.
+export function inLanguage(code: string, language: Language): boolean {
+  const { region } = parse(code);
+  return region === '' || languageOf(region) === language;
+}
+
 const MODERN_MARKER: Partial<Record<Language, string>> = { French: 'FR', German: 'DE', Italian: 'IT', Spanish: 'SP', Portuguese: 'PT' };
 const OLD_MARKER: Partial<Record<Language, string>> = { French: 'F', German: 'G', Italian: 'I', Spanish: 'S', Portuguese: 'P' };
 

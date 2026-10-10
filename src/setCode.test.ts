@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CODE_PATTERN, extract, candidateCodes, languageOf, lookupCandidates, parse, printedCode } from './setCode';
+import { CODE_PATTERN, extract, candidateCodes, inLanguage, languageOf, lookupCandidates, parse, printedCode } from './setCode';
 
 describe('extract', () => {
   it('returns a clean code unchanged', () => {
@@ -184,5 +184,25 @@ describe('printedCode', () => {
   it('gives codes that read back as that language', () => {
     expect(languageOf(parse(printedCode('RA01-EN051', 'French')).region)).toBe('French');
     expect(languageOf(parse(printedCode('LOB-E001', 'Italian')).region)).toBe('Italian');
+  });
+});
+
+describe('inLanguage', () => {
+  it('accepts a code whose marker is the language', () => {
+    expect(inLanguage('RA01-FR051', 'French')).toBe(true);
+    expect(inLanguage('LOB-F001', 'French')).toBe(true);
+    expect(inLanguage('RA01-EN051', 'English')).toBe(true);
+    expect(inLanguage('ALIN-JP049', 'Japanese')).toBe(true);
+  });
+
+  it('refuses a code whose marker is another language', () => {
+    expect(inLanguage('RA01-EN051', 'French')).toBe(false);
+    expect(inLanguage('RA01-FR051', 'English')).toBe(false);
+    expect(inLanguage('SAST-IT033', 'French')).toBe(false);
+  });
+
+  it('accepts a code without a marker in every language', () => {
+    expect(inLanguage('SDK-001', 'French')).toBe(true);
+    expect(inLanguage('SDK-001', 'English')).toBe(true);
   });
 });

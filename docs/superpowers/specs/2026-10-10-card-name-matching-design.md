@@ -142,3 +142,19 @@ The rule that the app rests after each reading for as long as the reading took i
 - `detector`: one test per row of the table, name memory expiring, dismissal by card.
 - `textBoxes`/`ocr`: choice of name boxes by position and width.
 - Replay test: each picture in `projects/ressources` run through reader, name index and detector with the real database. The code and name read for each picture are reported to Maxime, who supplies the real ones; these become the expected values.
+
+## Later additions
+
+### Language of the scan
+
+A list in the top bar sets the language of the cards being scanned. It offers every language the app knows except `Unknown`, starts from the language of the phone, and the last choice is kept in `localStorage`.
+
+While a language is set, only cards in that language are recognised: a code whose marker belongs to another language is ignored, and names are looked up among the names of that language alone. A code without a marker fits every language and is saved in the language set. Codes typed by hand are not restricted. Because one language is searched at a time, a name no longer ties across languages during a scan.
+
+### Cardmarket link
+
+The result panel and each card in "My cards" link to Cardmarket (`/fr/` site).
+
+- A card with one rarity in its set, in a European language or English: the card's own page, `Singles/<set>/<card>`, both written with punctuation dropped and spaces as hyphens.
+- A card with several rarities in its set: a search for the card name. Its page carries a version number (`-V5-Starlight-Rare`) that the card database does not hold.
+- Japanese, Korean and Chinese cards: a search for the card name. Cardmarket sells them as separate sets (`<set>-OCG`).
