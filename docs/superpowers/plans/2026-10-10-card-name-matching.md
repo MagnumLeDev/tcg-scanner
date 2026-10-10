@@ -1996,3 +1996,5 @@ Give, for each picture: the code and the name the app read, and what it detected
 Before any change: 5/7 detected (missed: IMG_9750, IMG_9755); average per reading 480, 556, 480 ms (three runs, desktop headless Chromium). Runs vary by about 15 % on their own, so comparisons use the median of three.
 
 After name reading (Task 5): average 487, 495, 492 ms per reading (median 492, +2.5 %). The name is read on all seven pictures.
+
+Final (Task 9): 7/7 detected (IMG_9750 and IMG_9755 by name); average 482, 484, 487 ms per reading (median 484, +0.8 % on the baseline). Name lookup 0.9 to 2.9 ms. Index build 138 to 175 ms for 59 619 names. All on desktop headless Chromium; a phone is several times slower.
