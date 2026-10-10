@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CardDatabase } from '../cardDatabase';
 import { match } from '../cardMatch';
 import type { NewEntry } from '../collection';
 import { createDetector } from '../detector';
 import { pictureLastRead, prepare, recognise } from '../ocr/ocr';
+import { sampleFileName } from '../sample';
+import { saveFile } from '../saveFile';
 import { CameraView } from './CameraView';
 import { ResultPanel } from './ResultPanel';
 
@@ -26,6 +28,7 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   const [manualId, setManualId] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
   const [details, setDetails] = useState<Details | null>(null);
+  const lastCrop = useRef<HTMLCanvasElement | null>(null); // what the camera last captured, untouched
   const [reader, setReader] = useState<'loading' | 'ready' | 'failed'>('loading');
   const hasData = db.hasData();
   const detector = useMemo(() => createDetector((code) => match(db, code)), [db]);
@@ -56,6 +59,7 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   }
 
   async function handleFrame(canvas: HTMLCanvasElement) {
+    lastCrop.current = canvas;
     const started = performance.now();
     const text = await recognise(canvas);
     if (showDetails) {
@@ -69,6 +73,18 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
     if (!detection) return;
     navigator.vibrate?.(60);
     setReading({ id: Date.now(), code: detection.code, detected: true });
+  }
+
+  // Saves what the camera captured, named after the code the user reads on the
+  // card, so that cards the reader gets wrong can be collected and studied.
+  function savePicture() {
+    const crop = lastCrop.current;
+    if (!crop) return;
+    const typed = window.prompt('Code printed on the card (leave empty if you cannot read it)');
+    if (typed === null) return;
+    crop.toBlob((blob) => {
+      if (blob) void saveFile(new File([blob], sampleFileName(typed, new Date()), { type: 'image/png' }), true);
+    }, 'image/png');
   }
 
   // The card is usually still in front of the camera when the panel closes, so
@@ -119,6 +135,9 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
         <div className="scan-details">
           {details?.picture && <img src={details.picture} alt="What the text reader sees" />}
           <div>{details ? `Read in ${details.milliseconds} ms: ${details.text || '(nothing)'}` : 'Waiting for a reading…'}</div>
+          <button onClick={savePicture} disabled={!details}>
+            Save picture
+          </button>
         </div>
       )}
 

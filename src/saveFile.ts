@@ -1,9 +1,16 @@
 // Installed web apps on iOS handle blob downloads poorly, so prefer the share
 // sheet ("Save to Files", AirDrop, mail) and fall back to a normal download.
 export async function saveTextFile(name: string, text: string, type: string): Promise<void> {
-  const file = new File([text], name, { type });
+  await saveFile(new File([text], name, { type }));
+}
 
-  if (navigator.canShare?.({ files: [file] })) {
+// With `preferDownload` the file goes straight to the downloads folder where
+// that works well (everywhere but iOS), which is quicker when saving many files.
+export async function saveFile(file: File, preferDownload = false): Promise<void> {
+  const name = file.name;
+  const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+
+  if ((!preferDownload || isIos) && navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: name });
       return;
