@@ -37,6 +37,7 @@ export type Detector = {
 };
 
 const SURE = 0.8; // a line read with at least this confidence is trusted on its own
+const ONE_LOOK = 0.9; // a name matched at least this well is trusted on a single reading
 const WINDOW = 3; // otherwise a code or a name is trusted once read twice within this many readings; a name is also remembered this long
 const RELEASE = 3; // readings in a row without a dismissed code before it counts again
 const NAME_RELEASE = 2; // whole-picture readings in a row without a dismissed card before its name counts again
@@ -139,6 +140,13 @@ export function createDetector(cards: Cards): Detector {
 
       if (agreed) return blocked(agreed) ? null : accept(agreed);
       if (corrected && !blocked(corrected)) return accept(corrected);
+
+      // A name read clearly says which card this is without the help of a code.
+      if (named && named.at === reading && named.match.score >= ONE_LOOK) {
+        const { cardId, name: cardName, language } = named.match;
+        const detection: Detection = { kind: 'card', cardId, name: cardName, language };
+        if (!blocked(detection)) return accept(detection);
+      }
 
       for (const [code, { match, sure }] of seen) {
         const detection: Detection = { kind: 'code', code, match };

@@ -30,6 +30,7 @@ const context = await chromium.launchPersistentContext('node_modules/.cache/repl
 
 let failures = 0;
 const times = [];
+const total = []; // per picture: the time until the card was detected
 try {
   const page = await context.newPage();
   page.on('pageerror', (error) => console.error('page error:', error.message));
@@ -41,7 +42,7 @@ try {
   await page.waitForFunction(() => typeof window.replay === 'function');
 
   for (const picture of pictures) {
-    const result = await page.evaluate(([url, card]) => window.replay(url, card), [`/pictures/${picture.file}`, picture.card]);
+    const result = await page.evaluate(([url, card, language]) => window.replay(url, card, language), [`/pictures/${picture.file}`, picture.card, picture.language]);
     const got = result.detected?.kind === 'code' ? result.detected.code : result.detected?.kind === 'card' ? result.detected.name : null;
     const ok =
       picture.code === null ||
@@ -51,6 +52,7 @@ try {
     console.log(`\n${picture.file}  expected ${picture.code ?? '?'} / ${picture.name ?? '?'}`);
     console.log(`  detected: ${result.detected?.kind ?? 'nothing'} ${got ?? ''}  ${ok ? 'OK' : 'MISSED'}`);
     console.log(`  name match: ${result.named ? `${result.named.name} [${result.named.language}] ${result.named.score.toFixed(2)}` : 'none'}`);
+    total.push(result.readings.reduce((sum, reading) => sum + reading.milliseconds, 0));
     for (const reading of result.readings) {
       times.push(reading.milliseconds);
       console.log(`  ${reading.milliseconds} ms  ${JSON.stringify(reading)}`);
@@ -62,4 +64,5 @@ try {
 }
 
 const average = Math.round(times.reduce((sum, time) => sum + time, 0) / times.length);
-console.log(`\n${pictures.length - failures}/${pictures.length} detected, average ${average} ms per reading`);
+const untilDetected = Math.round(total.reduce((sum, time) => sum + time, 0) / total.length);
+console.log(`\n${pictures.length - failures}/${pictures.length} detected, average ${average} ms per look, ${untilDetected} ms from first look to detection`);

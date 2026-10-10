@@ -1,9 +1,9 @@
 [
-  { "file": "IMG_9750.jpg", "card": { "x": 0.15, "y": 0.21, "width": 0.65, "height": 0.66 }, "code": "RA01-FR051", "name": "Renfort de l'Armée" },
-  { "file": "IMG_9751.jpg", "card": { "x": 0.14, "y": 0.10, "width": 0.68, "height": 0.74 }, "code": "CORI-FR046", "name": "Chapeaux Magiques du Chaos" },
-  { "file": "IMG_9752.jpg", "card": { "x": 0.16, "y": 0.11, "width": 0.63, "height": 0.70 }, "code": "OP21-FR002", "name": "Reinoheart des Tiarmentations" },
-  { "file": "IMG_9753.jpg", "card": { "x": 0.17, "y": 0.17, "width": 0.63, "height": 0.70 }, "code": "ANGU-FR046", "name": "Dinolutteur Pancraceratops" },
-  { "file": "IMG_9754.jpg", "card": { "x": 0.18, "y": 0.23, "width": 0.62, "height": 0.69 }, "code": "MRD-F128", "name": "Brouilleur Magique" },
-  { "file": "IMG_9755.jpg", "card": { "x": 0.19, "y": 0.31, "width": 0.54, "height": 0.54 }, "code": "SAST-IT033", "name": "Truccastella Chitarra Dolce Banda" },
-  { "file": "IMG_9756.jpg", "card": { "x": 0.21, "y": 0.27, "width": 0.54, "height": 0.54 }, "code": "FLOD-FR088", "name": "Dragster de l'Aube F.A." }
+  { "file": "IMG_9750.jpg", "card": { "x": 0.15, "y": 0.21, "width": 0.65, "height": 0.66 }, "code": "RA01-FR051", "name": "Renfort de l'Armée", "language": "French" },
+  { "file": "IMG_9751.jpg", "card": { "x": 0.14, "y": 0.10, "width": 0.68, "height": 0.74 }, "code": "CORI-FR046", "name": "Chapeaux Magiques du Chaos", "language": "French" },
+  { "file": "IMG_9752.jpg", "card": { "x": 0.16, "y": 0.11, "width": 0.63, "height": 0.70 }, "code": "OP21-FR002", "name": "Reinoheart des Tiarmentations", "language": "French" },
+  { "file": "IMG_9753.jpg", "card": { "x": 0.17, "y": 0.17, "width": 0.63, "height": 0.70 }, "code": "ANGU-FR046", "name": "Dinolutteur Pancraceratops", "language": "French" },
+  { "file": "IMG_9754.jpg", "card": { "x": 0.18, "y": 0.23, "width": 0.62, "height": 0.69 }, "code": "MRD-F128", "name": "Brouilleur Magique", "language": "French" },
+  { "file": "IMG_9755.jpg", "card": { "x": 0.19, "y": 0.31, "width": 0.54, "height": 0.54 }, "code": "SAST-IT033", "name": "Truccastella Chitarra Dolce Banda", "language": "Italian" },
+  { "file": "IMG_9756.jpg", "card": { "x": 0.21, "y": 0.27, "width": 0.54, "height": 0.54 }, "code": "FLOD-FR088", "name": "Dragster de l'Aube F.A.", "language": "French" }
 ]

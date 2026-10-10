@@ -75,18 +75,13 @@ export function restart(): void {
   closeUpNext = false;
 }
 
-// Finds the lines of text in the picture and reads those shaped like a set code.
-// Readings alternate between the whole picture and a close-up of part of it;
-// on the whole picture, the lines where the card name is are read as well.
-export async function recognise(whole: HTMLCanvasElement): Promise<Reading> {
-  if (whole.width === 0 || whole.height === 0) return { codes: [], names: [], whole: true };
-  const reader = await getReader();
-  const closeUp = closeUpNext;
-  const source = closeUp ? cut(whole, CLOSE_UP) : whole;
-  closeUpNext = !closeUpNext;
+type Found = { boxes: Box[]; small: HTMLCanvasElement; context: CanvasRenderingContext2D; fullSize: (box: Box) => Box };
 
+// Finds the lines of text in a picture shrunk to at most the given size. The
+// boxes are in the shrunk picture; fullSize puts one back into the picture given.
+async function findLines(reader: Reader, source: HTMLCanvasElement, side: number): Promise<Found> {
   // The model that finds text wants sides that are multiples of 32.
-  const shrink = Math.min(1, DETECTION_SIDE / Math.max(source.width, source.height));
+  const shrink = Math.min(1, side / Math.max(source.width, source.height));
   const width = Math.max(32, Math.round((source.width * shrink) / 32) * 32);
   const height = Math.max(32, Math.round((source.height * shrink) / 32) * 32);
   const small = document.createElement('canvas');
@@ -101,15 +96,6 @@ export async function recognise(whole: HTMLCanvasElement): Promise<Reading> {
   });
   const probability = found[reader.detection.outputNames[0]].data as Float32Array;
 
-  const all = findTextBoxes(probability, width, height);
-  const titles = closeUp ? [] : nameBoxes(all, width, height);
-
-  const shape = (box: Box) => (box.right - box.left + 1) / (box.bottom - box.top + 1);
-  const boxes = all
-    .filter((box) => !titles.includes(box) && shape(box) >= 2.5 && shape(box) <= 11)
-    .sort((a, b) => Math.abs(shape(a) - CODE_SHAPE) - Math.abs(shape(b) - CODE_SHAPE))
-    .slice(0, MAX_LINES);
-
   const scaleX = source.width / width;
   const scaleY = source.height / height;
   const fullSize = (box: Box): Box => ({
@@ -118,22 +104,94 @@ export async function recognise(whole: HTMLCanvasElement): Promise<Reading> {
     right: (box.right + 1) * scaleX,
     bottom: (box.bottom + 1) * scaleY,
   });
+  return { boxes: findTextBoxes(probability, width, height), small, context, fullSize };
+}
+
+function outline(context: CanvasRenderingContext2D, boxes: Box[], colour: string): void {
+  context.lineWidth = 2;
+  context.strokeStyle = colour;
+  for (const box of boxes) context.strokeRect(box.left, box.top, box.right - box.left + 1, box.bottom - box.top + 1);
+}
+
+// Where the card name is when the card is roughly inside the outline: the top
+// of the picture. Looking only there is several times quicker than looking at
+// the whole card, and the name is large enough to be found in a small picture.
+const NAME_STRIP = { left: 0, top: 0, width: 1, height: 0.2 };
+const NAME_SIDE = 480;
+const NAME_MIN_WIDTH = 0.2; // of the picture's width; narrower boxes are icons or stray marks
+
+// Reads the line the card name is on, and nothing else.
+export async function readName(whole: HTMLCanvasElement): Promise<Line[]> {
+  if (whole.width === 0 || whole.height === 0) return [];
+  const reader = await getReader();
+  const strip = cut(whole, NAME_STRIP);
+  const { boxes, small, context, fullSize } = await findLines(reader, strip, NAME_SIDE);
+  // The name is the largest print at the top of a card.
+  const height = (box: Box) => box.bottom - box.top;
+  const name = boxes
+    .filter((box) => box.right - box.left + 1 >= small.width * NAME_MIN_WIDTH)
+    .sort((a, b) => height(b) - height(a))[0];
+  outline(context, name ? [name] : [], '#34c759');
+  lastPicture = small;
+  if (!name) return [];
+  const line = await readLine(reader, strip, fullSize(name), MAX_NAME_WIDTH);
+  return line.text === '' ? [] : [line];
+}
+
+const CLOSE_UP_LINES = 4; // lines read when only the code is looked for
+const CODE_BAND = { left: 0.45, top: 0.62, width: 0.55, height: 0.16 };
+const BAND_LINES = 2;
+
+// Reads the lines shaped like a set code around where the code is printed.
+// Most cards carry the code just under the artwork, on the right: that narrow
+// band is looked at first, and the wider close-up only when the code is not there.
+export async function readCodes(whole: HTMLCanvasElement, enough: (line: Line) => boolean): Promise<Line[]> {
+  const band = (await recognise(whole, 'band', enough)).codes;
+  if (band.some(enough)) return band;
+  return [...band, ...(await recognise(whole, 'closeUp', enough)).codes];
+}
+
+// Finds the lines of text in the picture and reads those shaped like a set code.
+// Readings alternate between the whole picture and a close-up of part of it,
+// unless one of the two is asked for; on the whole picture, the lines where the
+// card name is are read as well.
+export async function recognise(
+  whole: HTMLCanvasElement,
+  part?: 'whole' | 'closeUp' | 'band',
+  enough?: (line: Line) => boolean, // stops reading further lines once one of them satisfies it
+): Promise<Reading> {
+  if (whole.width === 0 || whole.height === 0) return { codes: [], names: [], whole: true };
+  const reader = await getReader();
+  const closeUp = part ? part !== 'whole' : closeUpNext;
+  const source = part === 'band' ? cut(whole, CODE_BAND) : closeUp ? cut(whole, CLOSE_UP) : whole;
+  if (!part) closeUpNext = !closeUpNext;
+
+  const { boxes: all, small, context, fullSize } = await findLines(reader, source, DETECTION_SIDE);
+  const titles = closeUp ? [] : nameBoxes(all, small.width, small.height);
+
+  const shape = (box: Box) => (box.right - box.left + 1) / (box.bottom - box.top + 1);
+  const boxes = all
+    .filter((box) => !titles.includes(box) && shape(box) >= 2.5 && shape(box) <= 11)
+    .sort((a, b) => Math.abs(shape(a) - CODE_SHAPE) - Math.abs(shape(b) - CODE_SHAPE))
+    .slice(0, part === 'band' ? BAND_LINES : part === 'closeUp' ? CLOSE_UP_LINES : MAX_LINES);
+
   const codes: Line[] = [];
-  for (const box of boxes) codes.push(await readLine(reader, source, fullSize(box), MAX_LINE_WIDTH));
+  for (const box of boxes) {
+    const line = await readLine(reader, source, fullSize(box), MAX_LINE_WIDTH);
+    codes.push(line);
+    if (enough?.(line)) break;
+  }
   const names: Line[] = [];
   for (const box of titles) names.push(await readLine(reader, source, fullSize(box), MAX_NAME_WIDTH));
 
-  context.lineWidth = 2;
-  context.strokeStyle = '#ff2d55';
-  for (const box of boxes) context.strokeRect(box.left, box.top, box.right - box.left + 1, box.bottom - box.top + 1);
-  context.strokeStyle = '#34c759';
-  for (const box of titles) context.strokeRect(box.left, box.top, box.right - box.left + 1, box.bottom - box.top + 1);
+  outline(context, boxes, '#ff2d55');
+  outline(context, titles, '#34c759');
   lastPicture = small;
 
   return { codes: codes.filter((line) => line.text !== ''), names: names.filter((line) => line.text !== ''), whole: !closeUp };
 }
 
-function cut(picture: HTMLCanvasElement, part: typeof CLOSE_UP): HTMLCanvasElement {
+function cut(picture: HTMLCanvasElement, part: { left: number; top: number; width: number; height: number }): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(picture.width * part.width);
   canvas.height = Math.round(picture.height * part.height);

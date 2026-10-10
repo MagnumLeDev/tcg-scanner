@@ -2,13 +2,16 @@
 // detector as the Scan screen, so that changes can be measured on real cards.
 import { createCardDatabase } from './cardDatabase';
 import { match } from './cardMatch';
-import { createDetector, type Detection } from './detector';
-import { prepare, recognise, restart } from './ocr/ocr';
+import type { Line } from './ocr/decode';
+import { createDetector, inOneLanguage, type Detection } from './detector';
+import { prepare, readCodes, readName, recognise, restart } from './ocr/ocr';
+import { createScanner } from './scanner';
+import { candidateCodes, type Language } from './setCode';
 import { SOURCES } from './sources';
 
 type Rect = { x: number; y: number; width: number; height: number }; // fractions of the picture
 
-const READINGS = 4; // whole picture, close-up, whole picture, close-up
+const READINGS = 4; // looks at each picture, as long as nothing is detected
 const CROP_WIDTH = 1000; // about what the phone camera gives for the outline
 
 const db = createCardDatabase(SOURCES, indexedDB);
@@ -33,7 +36,7 @@ function crop(image: HTMLImageElement, card: Rect): HTMLCanvasElement {
   return canvas;
 }
 
-async function replay(pictureUrl: string, card: Rect) {
+async function replay(pictureUrl: string, card: Rect, language: Language) {
   await ready;
   const image = new Image();
   image.src = pictureUrl;
@@ -41,18 +44,28 @@ async function replay(pictureUrl: string, card: Rect) {
   const canvas = crop(image, card);
 
   restart();
-  const detector = createDetector({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf });
+  const cards = inOneLanguage({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf }, language);
+  const detector = createDetector(cards);
+  let looks = 0;
+  const scanner = createScanner<HTMLCanvasElement>({
+    reader: { readName, readCodes, readAll: (picture) => recognise(picture) },
+    findByName: cards.findByName,
+    isCode: (text) => candidateCodes(text).some((code) => cards.find(code) !== null),
+    printingsOf: cards.printingsOf,
+    feed: detector.feed,
+    glance: () => [looks++ * 100], // every look counts as a new picture: nothing is skipped
+  });
   const readings = [];
   let detected: Detection | null = null;
-  for (let i = 0; i < READINGS; i++) {
+  for (let i = 0; i < READINGS && !detected; i++) {
     const started = performance.now();
-    const read = await recognise(canvas);
+    const { detection, reading: read } = await scanner.look(canvas);
     const milliseconds = Math.round(performance.now() - started);
-    const show = (lines: typeof read.codes) => lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`);
-    readings.push({ milliseconds, codes: show(read.codes), names: show(read.names) });
-    detected ??= detector.feed(read);
+    const show = (lines: Line[]) => lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`);
+    readings.push({ milliseconds, codes: show(read?.codes ?? []), names: show(read?.names ?? []) });
+    detected = detection;
   }
-  const named = readings.flatMap((reading) => reading.names).map((text) => db.findByName(text.replace(/ \(\d+%\)$/, '')))[0] ?? null;
+  const named = readings.flatMap((reading) => reading.names).map((text) => cards.findByName(text.replace(/ \(\d+%\)$/, '')))[0] ?? null;
   return { detected, named, readings };
 }
 

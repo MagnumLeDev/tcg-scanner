@@ -3,10 +3,11 @@ import type { CardDatabase } from '../cardDatabase';
 import { match } from '../cardMatch';
 import type { NewEntry } from '../collection';
 import { createDetector, inOneLanguage, type Detection } from '../detector';
-import { pictureLastRead, prepare, recognise } from '../ocr/ocr';
+import { pictureLastRead, prepare, readCodes, readName, recognise } from '../ocr/ocr';
 import { sampleFileName } from '../sample';
-import type { Language } from '../setCode';
+import { candidateCodes, type Language } from '../setCode';
 import { saveFile } from '../saveFile';
+import { createScanner } from '../scanner';
 import { CameraView } from './CameraView';
 import { ResultPanel } from './ResultPanel';
 
@@ -19,6 +20,20 @@ type Props = {
 
 // A card the camera found, or nothing yet when the user is typing a code.
 type Reading = { id: number; detection: Detection | null };
+
+const GLANCE_SIDE = 16;
+let glanceCanvas: HTMLCanvasElement | null = null;
+
+// The picture shrunk to a few grey values: enough to tell whether it changed.
+function glance(picture: HTMLCanvasElement): number[] {
+  glanceCanvas ??= Object.assign(document.createElement('canvas'), { width: GLANCE_SIDE, height: GLANCE_SIDE });
+  const context = glanceCanvas.getContext('2d', { willReadFrequently: true })!;
+  context.drawImage(picture, 0, 0, GLANCE_SIDE, GLANCE_SIDE);
+  const pixels = context.getImageData(0, 0, GLANCE_SIDE, GLANCE_SIDE).data;
+  const grey: number[] = [];
+  for (let i = 0; i < pixels.length; i += 4) grey.push((pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3);
+  return grey;
+}
 
 // What the text reader was given and what it read, shown on request to help
 // work out why a card is not recognised.
@@ -33,13 +48,19 @@ export function ScanScreen({ db, language, onAdd, onOpenSettings }: Props) {
   const lastCrop = useRef<HTMLCanvasElement | null>(null); // what the camera last captured, untouched
   const [reader, setReader] = useState<'loading' | 'ready' | 'failed'>('loading');
   const hasData = db.hasData();
-  const detector = useMemo(
-    () =>
-      createDetector(
-        inOneLanguage({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf }, language),
-      ),
-    [db, language],
-  );
+  const { detector, scanner } = useMemo(() => {
+    const cards = inOneLanguage({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf }, language);
+    const detector = createDetector(cards);
+    const scanner = createScanner<HTMLCanvasElement>({
+      reader: { readName, readCodes, readAll: (picture) => recognise(picture) },
+      findByName: cards.findByName,
+      isCode: (text) => candidateCodes(text).some((code) => cards.find(code) !== null),
+      printingsOf: cards.printingsOf,
+      feed: detector.feed,
+      glance,
+    });
+    return { detector, scanner };
+  }, [db, language]);
 
   // Fetch the text reader as soon as the screen opens, so that scanning starts
   // quickly and works offline afterwards.
@@ -69,8 +90,8 @@ export function ScanScreen({ db, language, onAdd, onOpenSettings }: Props) {
   async function handleFrame(canvas: HTMLCanvasElement) {
     lastCrop.current = canvas;
     const started = performance.now();
-    const read = await recognise(canvas);
-    if (showDetails) {
+    const { detection, reading: read } = await scanner.look(canvas);
+    if (showDetails && read) {
       const show = (lines: typeof read.codes) => lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`).join(' · ');
       setDetails({
         text: [read.names.length > 0 ? `Name: ${show(read.names)}` : '', show(read.codes)].filter(Boolean).join(' — '),
@@ -78,7 +99,6 @@ export function ScanScreen({ db, language, onAdd, onOpenSettings }: Props) {
         milliseconds: Math.round(performance.now() - started),
       });
     }
-    const detection = detector.feed(read);
     if (!detection) return;
     navigator.vibrate?.(60);
     setReading({ id: Date.now(), detection });
@@ -100,6 +120,7 @@ export function ScanScreen({ db, language, onAdd, onOpenSettings }: Props) {
   // it is set aside until it has been taken away.
   function close(current: Reading) {
     if (current.detection) detector.dismiss(current.detection);
+    scanner.restart();
     setReading(null);
   }
 

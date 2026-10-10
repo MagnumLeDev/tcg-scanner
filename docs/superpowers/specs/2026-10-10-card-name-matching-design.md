@@ -158,3 +158,12 @@ The result panel and each card in "My cards" link to Cardmarket (`/fr/` site).
 - A card with one rarity in its set, in a European language or English: the card's own page, `Singles/<set>/<card>`, both written with punctuation dropped and spaces as hyphens.
 - A card with several rarities in its set: a search for the card name. Its page carries a version number (`-V5-Starlight-Rare`) that the card database does not hold.
 - Japanese, Korean and Chinese cards: a search for the card name. Cardmarket sells them as separate sets (`<set>-OCG`).
+
+### Reading the name first
+
+Each look at the camera now reads the name line alone, in the top fifth of the picture, before anything else (`src/scanner.ts`):
+
+- A name matched with a score of at least 0.9 identifies the card on that one look, without a code to confirm it. A weaker match still needs a second reading.
+- When the named card exists in one set, nothing more is read. When it exists in several, the code is looked for under the artwork, then in the wider close-up, and reading stops at the first line that holds a code that exists.
+- When no name is recognised, the picture is read as before (whole picture and close-up in turn).
+- A picture that stays the same and has given nothing four times in a row is no longer read, apart from one look in nine, until it changes.

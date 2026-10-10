@@ -12,9 +12,10 @@ const PRINTINGS: Printing[] = [
   { code: 'LOB-EN002', cardId: 2, name: 'Hitotsu-Me Giant', setName: 'LOB', rarity: 'Common' },
   { code: 'DUEA-ENSE1', cardId: 3, name: 'Special', setName: 'DUEA', rarity: 'Super Rare' },
 ];
+// Read well enough to match, not well enough to be trusted on a single reading.
 const NAMES: Record<string, NameMatch> = {
-  'DRAGON BLANC AUX YEUX BLEUS': { cardId: 1, name: 'Dragon Blanc aux Yeux Bleus', language: 'French', score: 1 },
-  'HITOTSU-ME GIANT': { cardId: 2, name: 'Hitotsu-Me Giant', language: 'English', score: 1 },
+  'DRAGON BLANC AUX YEUX BLEUS': { cardId: 1, name: 'Dragon Blanc aux Yeux Bleus', language: 'French', score: 0.85 },
+  'HITOTSU-ME GIANT': { cardId: 2, name: 'Hitotsu-Me Giant', language: 'English', score: 0.85 },
 };
 
 function cards(printings: Printing[] = PRINTINGS): Cards {
@@ -350,5 +351,37 @@ describe('scanning in one language', () => {
     expect(detector.feed(read([], 'DRAGON BLANC AUX YEUX BLEUS'))).toBeNull();
     detector.feed(read([], 'HITOTSU-ME GIANT'));
     expect(detector.feed(read([], 'HITOTSU-ME GIANT'))).toMatchObject({ kind: 'card', cardId: 2 });
+  });
+});
+
+describe('a name read clearly is enough', () => {
+  const clear = (): Cards => ({ ...cards(), findByName: (text) => (NAMES[text] ? { ...NAMES[text], score: 0.95 } : null) });
+
+  it('accepts the card on one reading, without a code', () => {
+    const detector = createDetector(clear());
+    expect(detector.feed(read([], 'HITOTSU-ME GIANT'))).toMatchObject({ kind: 'card', cardId: 2 });
+  });
+
+  it('still waits for a second reading of a name read less clearly', () => {
+    const detector = createDetector(cards());
+    expect(detector.feed(read([], 'HITOTSU-ME GIANT'))).toBeNull();
+    expect(detector.feed(read([], 'HITOTSU-ME GIANT'))).toMatchObject({ kind: 'card', cardId: 2 });
+  });
+
+  it('prefers the code of the named card when it is read in the same reading', () => {
+    const detector = createDetector(clear());
+    expect(detector.feed(read(unsure('LOB-EN002'), 'HITOTSU-ME GIANT'))).toMatchObject({ kind: 'code', code: 'LOB-EN002' });
+  });
+
+  it('goes by the name when the code read belongs to an unrelated card', () => {
+    const detector = createDetector(clear());
+    expect(detector.feed(read(sure('DUEA-ENSE1'), 'HITOTSU-ME GIANT'))).toMatchObject({ kind: 'card', cardId: 2 });
+  });
+
+  it('does not report a dismissed card again by its name', () => {
+    const detector = createDetector(clear());
+    const first = detector.feed(read([], 'HITOTSU-ME GIANT'))!;
+    detector.dismiss(first);
+    expect(detector.feed(read([], 'HITOTSU-ME GIANT'))).toBeNull();
   });
 });
