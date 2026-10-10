@@ -58,14 +58,6 @@ export function extract(text: string): string | null {
   return found ? found[1] : null;
 }
 
-// Every code in the text, in reading order, each listed once.
-export function extractAll(text: string): string[] {
-  const pattern = new RegExp(CODE_IN_TEXT.source, 'g');
-  const codes = new Set<string>();
-  for (const found of clean(text).matchAll(pattern)) codes.add(found[1]);
-  return [...codes];
-}
-
 export function parse(code: string): { prefix: string; region: string; number: string } {
   const hyphen = code.indexOf('-');
   const prefix = code.slice(0, hyphen);
@@ -107,13 +99,40 @@ function prefixVariants(prefix: string): string[] {
   return variants;
 }
 
-// The ways a code read by the camera may have been meant, most likely first:
-// letters in the number turned into the digits they look like, then exactly as
-// read, then the same with look-alike characters swapped in the set prefix.
-export function readingVariants(code: string): string[] {
-  const { prefix, region, number } = parse(code);
-  const digits = number.replace(/[A-Z]/g, (letter) => LOOK_ALIKE_DIGIT[letter] ?? letter);
-  const variants = [`${prefix}-${region}${digits}`, code];
-  for (const other of prefixVariants(prefix)) variants.push(`${other}-${region}${digits}`);
-  return [...new Set(variants)];
+const LOOK_ALIKE_LETTER: Record<string, string> = { '0': 'O', '1': 'I', '5': 'S', '8': 'B', '6': 'G' };
+
+const HYPHENATED = /([A-Z0-9]+)-([A-Z0-9]+)/g;
+
+// The set codes a line of text read by the camera may contain, most likely
+// first. The reading is taken apart at the hyphen: a set prefix before it, then
+// a language marker and a three-character number. Characters that cannot be
+// right where they stand (a letter in the number, a digit in the language
+// marker) are replaced by their look-alikes, and stray characters around the
+// code are dropped. The caller keeps the first candidate that exists.
+export function candidateCodes(line: string): string[] {
+  const primary: string[] = [];
+  const swapped: string[] = [];
+
+  for (const [, before, after] of clean(line).matchAll(HYPHENATED)) {
+    const endings: string[] = []; // language marker + number, as they may have been meant
+    for (let length = Math.min(5, after.length); length >= 3; length--) {
+      const rest = after.slice(length);
+      const marker = after.slice(0, length - 3).replace(/[0-9]/g, (digit) => LOOK_ALIKE_LETTER[digit] ?? digit);
+      if (!(marker in REGION_LANGUAGE)) continue;
+      const number = after.slice(length - 3, length);
+      const digits = number.replace(/[A-Z]/g, (letter) => LOOK_ALIKE_DIGIT[letter] ?? letter);
+      // A digit right after the number means the number was longer: not a set code.
+      if (/^\d{3}$/.test(digits) && !/^\d/.test(rest)) endings.push(marker + digits);
+      if (digits !== number && rest === '') endings.push(marker + number);
+    }
+
+    for (let length = Math.min(5, before.length); length >= 2; length--) {
+      const prefix = before.slice(-length);
+      for (const ending of endings) primary.push(`${prefix}-${ending}`);
+      for (const other of prefixVariants(prefix)) {
+        for (const ending of endings) swapped.push(`${other}-${ending}`);
+      }
+    }
+  }
+  return [...new Set([...primary, ...swapped])];
 }

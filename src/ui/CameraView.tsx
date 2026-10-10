@@ -4,16 +4,19 @@ import { cameraErrorMessage, captureFrame, startCamera } from '../camera';
 type Props = {
   // While paused the camera keeps showing, but nothing is read.
   paused: boolean;
-  // Called over and over with the part of the picture where the set code sits.
+  // Called over and over with the part of the picture around the outline.
   onFrame: (canvas: HTMLCanvasElement) => Promise<void>;
   onError: (message: string) => void;
 };
 
-const PAUSE_BETWEEN_READINGS_MS = 120;
+// After each reading the phone rests for as long as the reading took, within
+// these bounds, so that scanning never uses more than about half of its power.
+const MIN_PAUSE_MS = 150;
+const MAX_PAUSE_MS = 600;
 
 export function CameraView({ paused, onFrame, onError }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const bandRef = useRef<HTMLDivElement>(null);
+  const regionRef = useRef<HTMLDivElement>(null);
   const [running, setRunning] = useState(false);
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
@@ -69,16 +72,18 @@ export function CameraView({ paused, onFrame, onError }: Props) {
 
     async function tick() {
       const video = videoRef.current;
-      const band = bandRef.current;
-      if (!active || !video || !band) return;
+      const region = regionRef.current;
+      if (!active || !video || !region) return;
+      const started = performance.now();
       if (video.videoWidth > 0) {
         try {
-          await onFrameRef.current(captureFrame(video, band));
+          await onFrameRef.current(captureFrame(video, region));
         } catch {
           // One unreadable frame is not worth stopping for; the next one follows.
         }
       }
-      if (active) timer = setTimeout(tick, PAUSE_BETWEEN_READINGS_MS);
+      const pause = Math.max(MIN_PAUSE_MS, Math.min(MAX_PAUSE_MS, performance.now() - started));
+      if (active) timer = setTimeout(tick, pause);
     }
 
     tick();
@@ -92,7 +97,7 @@ export function CameraView({ paused, onFrame, onError }: Props) {
     <div className="camera">
       <video ref={videoRef} playsInline muted autoPlay />
       <div className="camera-card">
-        <div className="camera-band" ref={bandRef} />
+        <div className="camera-region" ref={regionRef} />
       </div>
     </div>
   );

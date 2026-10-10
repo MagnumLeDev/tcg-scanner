@@ -77,9 +77,9 @@ input, select {
   .camera-card { width: auto; height: 80%; }
 }
 
-/* Where the set code is printed: under the artwork, on the right. Wider than the
-   code itself so the card does not have to be lined up exactly. Not shown. */
-.camera-band { position: absolute; left: 38%; width: 66%; top: 62%; height: 22%; }
+/* The part of the picture that is read: the outline and a little around it,
+   so the card does not have to be lined up exactly. Not shown. */
+.camera-region { position: absolute; left: -8%; width: 116%; top: -6%; height: 112%; }
 
 .scan-status {
   position: absolute;

@@ -26,17 +26,15 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,wasm}'],
+        globPatterns: ['**/*.{js,css,html,png,svg}'],
+        // The text reader (about 30 MB) is too large to download with the app
+        // itself; it is fetched when the Scan screen first opens, then kept.
+        globIgnores: ['models/**'],
         runtimeCaching: [
           {
-            // Tesseract.js worker, core, and English model, fetched on first scan.
-            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/(@tesseract\.js-data|tesseract\.js)/,
+            urlPattern: /\.wasm$|\/models\//,
             handler: 'CacheFirst',
-            options: {
-              cacheName: 'tesseract',
-              cacheableResponse: { statuses: [0, 200] },
-              expiration: { maxEntries: 20 },
-            },
+            options: { cacheName: 'reader', cacheableResponse: { statuses: [200] } },
           },
         ],
       },

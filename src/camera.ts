@@ -16,6 +16,16 @@ export function sourceRect(video: Size, element: Size, frame: Rect): Rect {
   };
 }
 
+// Keeps only the part of the rectangle that lies inside the picture. Some
+// browsers draw nothing at all when asked for pixels outside it.
+export function clampRect(rect: Rect, picture: Size): Rect {
+  const x = Math.max(0, Math.min(picture.width, rect.x));
+  const y = Math.max(0, Math.min(picture.height, rect.y));
+  const right = Math.max(x, Math.min(picture.width, rect.x + rect.width));
+  const bottom = Math.max(y, Math.min(picture.height, rect.y + rect.height));
+  return { x, y, width: right - x, height: bottom - y };
+}
+
 export async function startCamera(video: HTMLVideoElement): Promise<() => void> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('this browser does not give web pages access to the camera');
@@ -38,8 +48,9 @@ export async function startCamera(video: HTMLVideoElement): Promise<() => void> 
 export function captureFrame(video: HTMLVideoElement, frameElement: HTMLElement): HTMLCanvasElement {
   const videoBox = video.getBoundingClientRect();
   const frameBox = frameElement.getBoundingClientRect();
-  const source = sourceRect(
-    { width: video.videoWidth, height: video.videoHeight },
+  const picture = { width: video.videoWidth, height: video.videoHeight };
+  const wanted = sourceRect(
+    picture,
     { width: videoBox.width, height: videoBox.height },
     {
       x: frameBox.left - videoBox.left,
@@ -48,6 +59,7 @@ export function captureFrame(video: HTMLVideoElement, frameElement: HTMLElement)
       height: frameBox.height,
     },
   );
+  const source = clampRect(wanted, picture);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(source.width);
   canvas.height = Math.round(source.height);

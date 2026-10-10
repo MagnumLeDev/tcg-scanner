@@ -44,7 +44,7 @@ Out of scope:
 | Part | Choice |
 |---|---|
 | Framework | React + TypeScript, built with Vite |
-| Text recognition | Tesseract.js (English model) |
+| Text recognition | PP-OCRv4 mobile models (PaddleOCR) on onnxruntime-web |
 | Card database storage | IndexedDB |
 | Card list storage | `localStorage` |
 | PWA | `vite-plugin-pwa` (manifest + service worker) |
@@ -85,8 +85,9 @@ A handful of malformed codes in the source (13, e.g. `DB49`, `MF03-EN0??`) do no
 - If the user has no subscribed database with data on the phone, the screen shows a prompt leading to Settings instead of the camera.
 - Live rear-camera preview (`getUserMedia` with `facingMode: "environment"`, video element with `playsinline` for iOS).
 - The preview fills the screen, with a card-shaped outline (59 × 86 proportions). The user holds the card roughly inside it; they do not aim at the code.
-- No capture button. The app reads continuously the band of the outline where the set code is printed (under the artwork, on the right, with generous margins).
-- A card is detected when a code read from the band matches a card in a subscribed database and is read twice within three readings. Letters in the number that look like digits (O, I, S, B…) are put right before matching. The result panel then opens and reading pauses; on Android the phone vibrates.
+- No capture button. The app reads continuously the outline and a little around it, alternating between the whole area and a close-up of where the set code usually is.
+- A card is detected when a line read from the picture contains a code that matches a card in a subscribed database. A confidently read code is accepted at once; otherwise it must be read twice within three readings. Characters that cannot be right where they stand (a letter in the number, a digit in the language marker) are replaced by their look-alikes before matching. The result panel then opens and reading pauses; on Android the phone vibrates.
+- After each reading the app rests for as long as the reading took (between 150 and 600 ms), to limit battery use.
 - After the panel is closed, the same code is ignored until the card has left the view.
 - "Type the code" opens the result panel empty, for cards that will not read. "Details" shows what the text reader was given and what it read.
 - Result panel:
@@ -124,16 +125,17 @@ Starts and stops the camera stream and returns the pixels inside the aiming fram
 
 ### `ocr`
 
-`recognise(canvas) → string`. Enlarges the crop 2×, turns it into black ink on white by comparing each pixel with its neighbourhood (once for dark text, once for light text), erases ink too large or too small to be a code character, then runs Tesseract.js once on both versions stacked, with:
+`recognise(canvas) → Line[]` (text and confidence per line). Uses the PP-OCRv4 mobile models from PaddleOCR on the ONNX runtime (WebAssembly), shipped with the app in `public/models`:
 
-- character whitelist `A–Z`, `0–9`, `-`
-- sparse-text page segmentation mode
+- a detection model finds where the lines of text are, on the picture shrunk to at most 960 pixels;
+- the lines shaped like a set code (at most 8) are cut out of the full-size picture and read by a recognition model.
+
+The runtime and models (about 30 MB) are fetched when the Scan screen first opens and cached by the service worker.
 
 ### `detector`
 
-`createDetector(find)` turns the stream of readings into detections: `feed(text)` returns a card once its code is confirmed, `dismiss(code)` sets a code aside until its card has left the view.
+`createDetector(find)` turns the stream of readings into detections: `feed(lines)` returns a card once its code is confirmed, `dismiss(code)` sets a code aside until its card has left the view.
 
-Tesseract.js and its model are loaded lazily on first visit to the Scan screen and cached by the service worker.
 
 ### `setCode`
 

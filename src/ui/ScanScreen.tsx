@@ -61,15 +61,15 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   async function handleFrame(canvas: HTMLCanvasElement) {
     lastCrop.current = canvas;
     const started = performance.now();
-    const text = await recognise(canvas);
+    const lines = await recognise(canvas);
     if (showDetails) {
       setDetails({
-        text: text.replace(/\s+/g, ' ').trim(),
-        picture: pictureLastRead()?.toDataURL('image/png') ?? null,
+        text: lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`).join(' · '),
+        picture: pictureLastRead()?.toDataURL('image/jpeg', 0.7) ?? null,
         milliseconds: Math.round(performance.now() - started),
       });
     }
-    const detection = detector.feed(text);
+    const detection = detector.feed(lines);
     if (!detection) return;
     navigator.vibrate?.(60);
     setReading({ id: Date.now(), code: detection.code, detected: true });

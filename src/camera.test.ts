@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cameraErrorMessage, sourceRect, startCamera } from './camera';
+import { cameraErrorMessage, clampRect, sourceRect, startCamera } from './camera';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -72,5 +72,24 @@ describe('cameraErrorMessage', () => {
   it('reports other failures with their message', () => {
     expect(cameraErrorMessage(new Error('no device'))).toContain('no device');
     expect(cameraErrorMessage('odd')).toContain('odd');
+  });
+});
+
+describe('clampRect', () => {
+  it('leaves a rectangle inside the picture alone', () => {
+    expect(clampRect({ x: 10, y: 20, width: 30, height: 40 }, { width: 100, height: 100 })).toEqual({ x: 10, y: 20, width: 30, height: 40 });
+  });
+
+  it('cuts off what sticks out on the left and top', () => {
+    expect(clampRect({ x: -10, y: -5, width: 30, height: 40 }, { width: 100, height: 100 })).toEqual({ x: 0, y: 0, width: 20, height: 35 });
+  });
+
+  it('cuts off what sticks out on the right and bottom', () => {
+    expect(clampRect({ x: 80, y: 90, width: 30, height: 40 }, { width: 100, height: 100 })).toEqual({ x: 80, y: 90, width: 20, height: 10 });
+  });
+
+  it('gives an empty rectangle when nothing is inside', () => {
+    const clamped = clampRect({ x: 200, y: 0, width: 30, height: 40 }, { width: 100, height: 100 });
+    expect(clamped.width).toBe(0);
   });
 });

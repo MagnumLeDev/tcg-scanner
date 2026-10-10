@@ -11,9 +11,9 @@
     "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
+    "onnxruntime-web": "^1.30.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "tesseract.js": "^7.0.0"
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
