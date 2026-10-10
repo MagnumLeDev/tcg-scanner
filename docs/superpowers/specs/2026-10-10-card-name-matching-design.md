@@ -93,7 +93,7 @@ The whole-picture reading already locates every line of text. Among the boxes fo
 
 ## Combining code and name (`src/detector.ts`)
 
-`feed` takes the result of one reading. The detector is given `find` (as today), `suggest`, `findByName` and `printingsOf`.
+`feed` takes the result of one reading. The detector is given `find` (as today), `findByName` and `printingsOf`. A code one character away is looked for among the named card's own printings.
 
 Because the name comes from whole-picture readings and the code often from close-ups, the detector remembers the last name match for 3 readings.
 
@@ -114,7 +114,7 @@ Dismissing works as today for codes. A card accepted by name is dismissed by car
 
 ## Result panel
 
-`ResultPanel` takes either an initial code (today) or an initial card. Opened on a card, it shows the card's name and a "Printing" list of that card's codes with their set names, and the language is pre-set to the language the name was read in. Choosing a printing fills the code field with the database's code for it; from there the panel behaves as it does today, and the user can correct the code to the one printed on the card.
+`ResultPanel` takes either an initial code (today) or an initial card. Opened on a card, it shows the card's name and a "Printing" list of that card's codes with their set names, and the language is pre-set to the language the name was read in. Choosing a printing fills the code field with that printing's code written for the language the name was read in (`RA01-EN051` becomes `RA01-FR051`); from there the panel behaves as it does today, and the user can still correct the code.
 
 ## Performance
 
