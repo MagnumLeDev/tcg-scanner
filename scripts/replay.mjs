@@ -42,10 +42,15 @@ try {
 
   for (const picture of pictures) {
     const result = await page.evaluate(([url, card]) => window.replay(url, card), [`/pictures/${picture.file}`, picture.card]);
-    const ok = picture.code === null || result.detected === picture.code;
+    const got = result.detected?.kind === 'code' ? result.detected.code : result.detected?.kind === 'card' ? result.detected.name : null;
+    const ok =
+      picture.code === null ||
+      got === picture.code ||
+      (result.detected?.kind === 'card' && picture.name !== null && got === picture.name);
     if (!ok) failures++;
     console.log(`\n${picture.file}  expected ${picture.code ?? '?'} / ${picture.name ?? '?'}`);
-    console.log(`  detected: ${JSON.stringify(result.detected)}  ${ok ? 'OK' : 'MISSED'}`);
+    console.log(`  detected: ${result.detected?.kind ?? 'nothing'} ${got ?? ''}  ${ok ? 'OK' : 'MISSED'}`);
+    console.log(`  name match: ${result.named ? `${result.named.name} [${result.named.language}] ${result.named.score.toFixed(2)}` : 'none'}`);
     for (const reading of result.readings) {
       times.push(reading.milliseconds);
       console.log(`  ${reading.milliseconds} ms  ${JSON.stringify(reading)}`);

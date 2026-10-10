@@ -2,7 +2,7 @@
 // detector as the Scan screen, so that changes can be measured on real cards.
 import { createCardDatabase } from './cardDatabase';
 import { match } from './cardMatch';
-import { createDetector } from './detector';
+import { createDetector, type Detection } from './detector';
 import { prepare, recognise, restart } from './ocr/ocr';
 import { SOURCES } from './sources';
 
@@ -16,6 +16,7 @@ const db = createCardDatabase(SOURCES, indexedDB);
 const ready = (async () => {
   await db.load();
   if (!db.hasData()) await db.subscribe(SOURCES[0].id);
+  else await db.checkForUpdates(); // as the app does when it opens: fetches what is new or missing
   await prepare();
 })();
 
@@ -40,18 +41,19 @@ async function replay(pictureUrl: string, card: Rect) {
   const canvas = crop(image, card);
 
   restart();
-  const detector = createDetector((code) => match(db, code));
+  const detector = createDetector({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf });
   const readings = [];
-  let detected: string | null = null;
+  let detected: Detection | null = null;
   for (let i = 0; i < READINGS; i++) {
     const started = performance.now();
     const read = await recognise(canvas);
     const milliseconds = Math.round(performance.now() - started);
     const show = (lines: typeof read.codes) => lines.map((line) => `${line.text} (${Math.round(line.confidence * 100)}%)`);
     readings.push({ milliseconds, codes: show(read.codes), names: show(read.names) });
-    detected ??= detector.feed(read.codes)?.code ?? null;
+    detected ??= detector.feed(read);
   }
-  return { detected, readings };
+  const named = readings.flatMap((reading) => reading.names).map((text) => db.findByName(text.replace(/ \(\d+%\)$/, '')))[0] ?? null;
+  return { detected, named, readings };
 }
 
 (window as unknown as { replay: typeof replay }).replay = replay;

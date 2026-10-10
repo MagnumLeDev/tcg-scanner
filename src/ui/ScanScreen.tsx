@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CardDatabase } from '../cardDatabase';
 import { match } from '../cardMatch';
 import type { NewEntry } from '../collection';
-import { createDetector } from '../detector';
+import { createDetector, type Detection } from '../detector';
 import { pictureLastRead, prepare, recognise } from '../ocr/ocr';
 import { sampleFileName } from '../sample';
 import { saveFile } from '../saveFile';
@@ -15,8 +15,8 @@ type Props = {
   onOpenSettings: () => void;
 };
 
-// A card the camera found (detected) or a code the user is typing (not detected).
-type Reading = { id: number; code: string; detected: boolean };
+// A card the camera found, or nothing yet when the user is typing a code.
+type Reading = { id: number; detection: Detection | null };
 
 // What the text reader was given and what it read, shown on request to help
 // work out why a card is not recognised.
@@ -31,7 +31,10 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   const lastCrop = useRef<HTMLCanvasElement | null>(null); // what the camera last captured, untouched
   const [reader, setReader] = useState<'loading' | 'ready' | 'failed'>('loading');
   const hasData = db.hasData();
-  const detector = useMemo(() => createDetector((code) => match(db, code)), [db]);
+  const detector = useMemo(
+    () => createDetector({ find: (code) => match(db, code), findByName: db.findByName, printingsOf: db.printingsOf }),
+    [db],
+  );
 
   // Fetch the text reader as soon as the screen opens, so that scanning starts
   // quickly and works offline afterwards.
@@ -70,10 +73,10 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
         milliseconds: Math.round(performance.now() - started),
       });
     }
-    const detection = detector.feed(read.codes);
+    const detection = detector.feed(read);
     if (!detection) return;
     navigator.vibrate?.(60);
-    setReading({ id: Date.now(), code: detection.code, detected: true });
+    setReading({ id: Date.now(), detection });
   }
 
   // Saves what the camera captured, named after the code the user reads on the
@@ -89,9 +92,9 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
   }
 
   // The card is usually still in front of the camera when the panel closes, so
-  // its code is set aside until the card has been taken away.
+  // it is set aside until it has been taken away.
   function close(current: Reading) {
-    if (current.detected) detector.dismiss(current.code);
+    if (current.detection) detector.dismiss(current.detection);
     setReading(null);
   }
 
@@ -126,7 +129,7 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
           )}
           {reader === 'ready' && <p>Hold a card inside the outline</p>}
           <div className="row">
-            <button onClick={() => setReading({ id: Date.now(), code: '', detected: false })}>Type the code</button>
+            <button onClick={() => setReading({ id: Date.now(), detection: null })}>Type the code</button>
             <button onClick={() => setShowDetails((shown) => !shown)}>{showDetails ? 'Hide details' : 'Details'}</button>
           </div>
         </div>
@@ -146,7 +149,8 @@ export function ScanScreen({ db, onAdd, onOpenSettings }: Props) {
         <ResultPanel
           key={reading.id}
           db={db}
-          initialCode={reading.code}
+          initialCode={reading.detection?.kind === 'code' ? reading.detection.code : ''}
+          initialCard={reading.detection?.kind === 'card' ? reading.detection : null}
           hint={null}
           onAdd={(entry) => {
             onAdd(entry);
