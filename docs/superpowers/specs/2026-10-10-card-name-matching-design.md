@@ -101,10 +101,12 @@ Because the name comes from whole-picture readings and the code often from close
 |---|---|---|
 | Exists in database | Same card | Accepted at once, at any confidence |
 | Exists in database | None | As today: confidence ≥ 0.8, or read twice within 3 readings |
-| Exists in database | A different card | Not accepted on one reading; accepted when the code is read twice within 3 readings |
-| Not in database | A card that has a printing one character away from a code candidate | That printing is accepted |
 | Exists in database | A different card, which has a printing one character away from the code read | The named card's printing is accepted |
+| Exists in database | Any other different card | Not accepted on one reading; accepted when the code is read twice within 3 readings |
+| Not in database | A card that has a printing one character away from a code candidate | That printing is accepted |
 | None | Same name match in two readings within 3 | Accepted as a card with no code |
+
+The rows are tried from top to bottom; the first that applies decides.
 
 A detection is either `{ code, match }` as today, or `{ cardId, name, language }` for the last row.
 
