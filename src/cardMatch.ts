@@ -1,4 +1,4 @@
-import { lookupCandidates, parse } from './setCode';
+import { lookupCandidates, parse, printedCode, type Language } from './setCode';
 import type { Printing } from './sources/types';
 
 export type Lookup = {
@@ -33,4 +33,12 @@ export function suggestions(db: Lookup, code: string): string[] {
     }
   }
   return [...found];
+}
+
+// The code of a card that was printed in one set only, as printed in the given
+// language: there is then nothing to choose between.
+export function onlyCode(printings: Printing[], language: Language): string | null {
+  const codes = new Set(printings.map((p) => p.code));
+  if (codes.size !== 1) return null;
+  return printedCode([...codes][0], language);
 }

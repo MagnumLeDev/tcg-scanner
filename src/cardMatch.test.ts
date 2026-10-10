@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { match, suggestions, type Lookup } from './cardMatch';
+import { match, onlyCode, suggestions, type Lookup } from './cardMatch';
 import type { Printing } from './sources/types';
 
 function printing(code: string, rarity = 'Common'): Printing {
@@ -75,5 +75,23 @@ describe('suggestions', () => {
 
   it('returns nothing when there are no near codes', () => {
     expect(suggestions(lookup([]), 'ZZZ-EN999')).toEqual([]);
+  });
+});
+
+describe('onlyCode', () => {
+  it('gives the code of a card printed in a single set, written for the language', () => {
+    expect(onlyCode([printing('SAST-EN033')], 'Italian')).toBe('SAST-IT033');
+  });
+
+  it('counts the same code in several rarities as one printing', () => {
+    expect(onlyCode([printing('RA01-EN051', 'Super Rare'), printing('RA01-EN051', 'Secret Rare')], 'French')).toBe('RA01-FR051');
+  });
+
+  it('gives nothing when the card was printed in several sets', () => {
+    expect(onlyCode([printing('LOB-EN001'), printing('SDK-001')], 'English')).toBeNull();
+  });
+
+  it('gives nothing when the card has no printing', () => {
+    expect(onlyCode([], 'English')).toBeNull();
   });
 });

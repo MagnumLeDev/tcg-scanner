@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CardDatabase } from '../cardDatabase';
-import { match, suggestions } from '../cardMatch';
+import { match, onlyCode, suggestions } from '../cardMatch';
 import type { NewEntry } from '../collection';
 import { extract, LANGUAGES, languageOf, parse, printedCode, type Language } from '../setCode';
 
@@ -15,7 +15,11 @@ type Props = {
 };
 
 export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, onClose }: Props) {
-  const [text, setText] = useState(initialCode);
+  // A card known by name that exists in one set only needs no choice: its code is filled in.
+  const [single] = useState(() =>
+    initialCard && !initialCode ? (onlyCode(db.printingsOf(initialCard.cardId), initialCard.language) ?? '') : '',
+  );
+  const [text, setText] = useState(initialCode || single);
   const code = extract(text);
   const found = code ? match(db, code) : null;
   const near = code && !found ? suggestions(db, code) : [];
@@ -25,7 +29,7 @@ export function ResultPanel({ db, initialCode, initialCard = null, hint, onAdd, 
 
   const [language, setLanguage] = useState<Language>('Unknown');
   const [rarity, setRarity] = useState('');
-  const [chosen, setChosen] = useState(''); // the code last filled in from the list of printings
+  const [chosen, setChosen] = useState(single); // the code last filled in from the card's printings
 
   // Whenever the code changes, restart from what the code itself says.
   useEffect(() => {

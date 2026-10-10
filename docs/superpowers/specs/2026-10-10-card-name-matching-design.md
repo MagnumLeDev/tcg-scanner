@@ -116,7 +116,7 @@ Dismissing works as today for codes, and the dismissed card is also not reported
 
 ## Result panel
 
-`ResultPanel` takes either an initial code (today) or an initial card. Opened on a card, it shows the card's name and a "Printing" list of that card's codes with their set names, and the language is pre-set to the language the name was read in. Choosing a printing fills the code field with that printing's code written for the language the name was read in (`RA01-EN051` becomes `RA01-FR051`); from there the panel behaves as it does today, and the user can still correct the code.
+`ResultPanel` takes either an initial code (today) or an initial card. Opened on a card, it shows the card's name and a "Printing" list of that card's codes with their set names, and the language is pre-set to the language the name was read in. Choosing a printing fills the code field with that printing's code written for the language the name was read in (`RA01-EN051` becomes `RA01-FR051`); from there the panel behaves as it does today, and the user can still correct the code. When the card was printed in one set only, there is nothing to choose: the panel opens with that code already filled in.
 
 ## Performance
 
