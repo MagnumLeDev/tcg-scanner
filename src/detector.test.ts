@@ -7,7 +7,7 @@ const KNOWN: Record<string, string> = { 'DUEA-ENSE1': 'DUEA-ENSE1', 'LOB-EN001':
 function find(code: string): Match | null {
   const matchedCode = KNOWN[code];
   if (!matchedCode) return null;
-  return { matchedCode, printings: [{ code: matchedCode, name: 'Card', setName: 'Set', rarity: 'Common' }] };
+  return { matchedCode, printings: [{ code: matchedCode, cardId: 1, name: 'Card', setName: 'Set', rarity: 'Common' }] };
 }
 
 // Lines read with too little confidence to be trusted on a single reading.

@@ -6,10 +6,10 @@ import type { Printing, Source } from './sources/types';
 // A fresh, empty in-memory IndexedDB per call, typed as the browser's factory.
 const freshIdb = (): IDBFactory => new FakeIDBFactory() as unknown as IDBFactory;
 
-const BEWD: Printing = { code: 'LOB-EN001', name: 'Blue-Eyes White Dragon', setName: 'LOB', rarity: 'Ultra Rare' };
-const DM: Printing = { code: 'LOB-EN005', name: 'Dark Magician', setName: 'LOB', rarity: 'Ultra Rare' };
-const ULTRA: Printing = { code: 'RA01-EN010', name: 'Two Rarities', setName: 'RA01', rarity: 'Ultra Rare' };
-const SECRET: Printing = { code: 'RA01-EN010', name: 'Two Rarities', setName: 'RA01', rarity: 'Secret Rare' };
+const BEWD: Printing = { code: 'LOB-EN001', cardId: 1, name: 'Blue-Eyes White Dragon', setName: 'LOB', rarity: 'Ultra Rare' };
+const DM: Printing = { code: 'LOB-EN005', cardId: 2, name: 'Dark Magician', setName: 'LOB', rarity: 'Ultra Rare' };
+const ULTRA: Printing = { code: 'RA01-EN010', cardId: 3, name: 'Two Rarities', setName: 'RA01', rarity: 'Ultra Rare' };
+const SECRET: Printing = { code: 'RA01-EN010', cardId: 3, name: 'Two Rarities', setName: 'RA01', rarity: 'Secret Rare' };
 
 function fakeSource(id: string, printings: Printing[]) {
   const state = {
@@ -33,6 +33,10 @@ function fakeSource(id: string, printings: Printing[]) {
       state.printingsCalls++;
       if (state.fail) throw new Error('offline');
       return state.printings;
+    },
+    nameLanguages: [],
+    async fetchNames() {
+      return [];
     },
   };
   return { source, state };
@@ -371,7 +375,7 @@ describe('card database', () => {
 
   it('suggests up to five known codes one edit away, sorted', async () => {
     const codes = ['LOB-EN001', 'LOB-EN002', 'LOB-EN003', 'LOB-EN004', 'LOB-EN005', 'LOB-EN006', 'SDK-001'];
-    const printings = codes.map((code) => ({ code, name: code, setName: 'S', rarity: 'Common' }));
+    const printings = codes.map((code, i) => ({ code, cardId: i + 1, name: code, setName: 'S', rarity: 'Common' }));
     const { source } = fakeSource('a', printings);
     const db = createCardDatabase([source], freshIdb());
     await db.load();

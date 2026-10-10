@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { flatten, ygoprodeck } from './ygoprodeck';
+import { flatten, names, ygoprodeck } from './ygoprodeck';
 
 const SAMPLE = {
   data: [
@@ -31,10 +31,10 @@ afterEach(() => vi.unstubAllGlobals());
 describe('flatten', () => {
   it('produces one printing per card-and-set entry', () => {
     expect(flatten(SAMPLE)).toEqual([
-      { code: 'LOB-EN001', name: 'Blue-Eyes White Dragon', setName: 'Legend of Blue Eyes White Dragon', rarity: 'Ultra Rare' },
-      { code: 'SDK-001', name: 'Blue-Eyes White Dragon', setName: 'Starter Deck: Kaiba', rarity: 'Ultra Rare' },
-      { code: 'RA01-EN010', name: 'Two Rarities', setName: 'Some Set', rarity: 'Ultra Rare' },
-      { code: 'RA01-EN010', name: 'Two Rarities', setName: 'Some Set', rarity: 'Secret Rare' },
+      { code: 'LOB-EN001', cardId: 89631139, name: 'Blue-Eyes White Dragon', setName: 'Legend of Blue Eyes White Dragon', rarity: 'Ultra Rare' },
+      { code: 'SDK-001', cardId: 89631139, name: 'Blue-Eyes White Dragon', setName: 'Starter Deck: Kaiba', rarity: 'Ultra Rare' },
+      { code: 'RA01-EN010', cardId: 1, name: 'Two Rarities', setName: 'Some Set', rarity: 'Ultra Rare' },
+      { code: 'RA01-EN010', cardId: 1, name: 'Two Rarities', setName: 'Some Set', rarity: 'Secret Rare' },
     ]);
   });
 
@@ -89,5 +89,44 @@ describe('ygoprodeck source', () => {
   it('fails clearly on an unexpected version payload', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({}))));
     await expect(ygoprodeck.fetchVersion()).rejects.toThrow(/format/i);
+  });
+});
+
+describe('flatten card ids', () => {
+  it('skips a card that has no numeric id', () => {
+    const json = { data: [{ name: 'No Id', card_sets: [{ set_name: 'S', set_code: 'LOB-EN002', set_rarity: 'Common' }] }] };
+    expect(flatten(json)).toEqual([]);
+  });
+});
+
+describe('names', () => {
+  it('keeps the id and name of each card', () => {
+    const json = { data: [{ id: 89631139, name: 'Dragon Blanc aux Yeux Bleus', desc: 'long text' }, { id: 1, name: 'Deux Raretés' }] };
+    expect(names(json)).toEqual([[89631139, 'Dragon Blanc aux Yeux Bleus'], [1, 'Deux Raretés']]);
+  });
+
+  it('skips entries without an id or a name', () => {
+    expect(names({ data: [{ id: 5 }, { name: 'x' }, null, { id: 6, name: '' }] })).toEqual([]);
+  });
+
+  it('rejects data in an unexpected format', () => {
+    expect(() => names({ error: 'no' })).toThrow('Unexpected card data format');
+  });
+});
+
+describe('fetchNames', () => {
+  it('asks for the language and returns its names', async () => {
+    const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify({ data: [{ id: 7, name: 'Magicien Sombre' }] })));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await ygoprodeck.fetchNames('French')).toEqual([[7, 'Magicien Sombre']]);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('cardinfo.php?language=fr');
+  });
+
+  it('has names in French, German, Italian and Portuguese', () => {
+    expect(ygoprodeck.nameLanguages).toEqual(['French', 'German', 'Italian', 'Portuguese']);
+  });
+
+  it('refuses a language it has no names in', async () => {
+    await expect(ygoprodeck.fetchNames('Spanish')).rejects.toThrow('No Spanish card names');
   });
 });

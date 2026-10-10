@@ -3,7 +3,7 @@ import { match, suggestions, type Lookup } from './cardMatch';
 import type { Printing } from './sources/types';
 
 function printing(code: string, rarity = 'Common'): Printing {
-  return { code, name: `Card ${code}`, setName: 'Set', rarity };
+  return { code, cardId: 1, name: `Card ${code}`, setName: 'Set', rarity };
 }
 
 function lookup(printings: Printing[], near: Record<string, string[]> = {}): Lookup {
